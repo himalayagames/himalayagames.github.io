@@ -106,10 +106,41 @@ function isTenGroup(r){ return TEN_VALUE.has(r); }
 // Sound settings (v111B)
 // -----------------
 let GAME_SOUNDS_ON = true;      // controls SFX only
-let SOUNDTRACK_ON = true;     // controls background soundtrack on/off
+let SOUNDTRACK_ON = false;    // default OFF (mobile-friendly)     // controls background soundtrack on/off
 let SOUNDTRACK_VOL = 0.25;      // 0..1 soundtrack volume
 let soundtrackAudio = null;
 let soundtrackStarted = false;
+
+
+// -----------------
+// Responsive UI scale + landscape prompt (v120B)
+// -----------------
+function applyUIScale(){
+  try{
+    const vw = window.innerWidth || 0;
+    const vh = window.innerHeight || 0;
+
+    // Landscape-only UX: if portrait, show a rotate prompt and block taps.
+    const portrait = vh > vw;
+    const rot = document.getElementById('rotateOverlay');
+    if(rot){
+      rot.classList.toggle('hidden', !portrait);
+      rot.style.pointerEvents = portrait ? 'auto' : 'none';
+    }
+    document.body.classList.toggle('portrait', portrait);
+
+    // Scale UI down on smaller screens; keep desktop at 1.00.
+    // Baseline tuned for iPad landscape / laptop widths.
+    const minDim = Math.min(vw, vh);
+    let s = minDim / 900;                 // 900px "comfortable" baseline
+    s = Math.max(0.56, Math.min(1.00, s)); // clamp
+    document.documentElement.style.setProperty('--uiScale', String(Number(s).toFixed(3)));
+  }catch(e){
+    // no-op
+  }
+}
+window.addEventListener('resize', applyUIScale);
+window.addEventListener('orientationchange', applyUIScale);
 
 // -----------------
 // Shoe state
@@ -3277,6 +3308,8 @@ normalizeBet();
 // Bankroll editing deferred (disabled in v20)
 
 function init(){
+  applyUIScale();
+
   initSoundtrack();
   startSoundtrack();
 

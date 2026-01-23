@@ -1,0 +1,275 @@
+
+
+
+v61 — 2026-01-19
+- Added targeted console snapshots around slide/flip/cleanup to diagnose post-flip vertical drop.
+- Separated slide (wrapper) from flip (inner) to avoid mixing transforms.
+
+v62 — 2026-01-19
+- Added extended post-cleanup diagnostics (two rAF snapshots + 250ms snapshot) to catch the late vertical drop.
+- Added ancestor container logging (shell parent, lane, lane parent, table) at every snapshot.
+- Added a MutationObserver tripwire to report class/style changes on likely culprit elements.
+
+v63 — 2026-01-19
+- Changed renderHands() to preserve existing card DOM nodes during sequential dealing (append-only when possible) to prevent post-flip drop caused by lane re-render replacements.
+- Reinforced vertical lock on all card shells after every render (top=0, marginTop=0, alignSelf=flex-start, translate=0 0).
+
+v64 — 2026-01-19
+- FIX: Eliminated lane-wide DOM clears/rebuilds by reconciling card shells in place (update existing shells, append missing, remove extras). This prevents the post-flip 'drop' that occurred when animated nodes were removed and replaced.
+- Updated diagnostics to flattened snapshot logs for easier copy/paste and easier comparison across frames.
+
+v65 — 2026-01-19
+- Attempted fix for subtle post-flip vertical 'snap' by removing translateZ(0) GPU-promote hack from .cardShell (can cause rounding snaps at end of 3D rotation).
+- Added explicit perspective-origin on .cardShell and explicit transform-origin/will-change on .cardFlip to stabilize the 3D flip projection.
+
+v66 — 2026-01-19
+- Attempted fix for post-flip vertical drift by making .cardFlip an absolutely-positioned inset(0) layer inside .cardShell (prevents any internal flow/baseline effects).
+- Added translateZ(0) stabilization on .cardFlip (and preserved it when flipped) to reduce subpixel rounding changes during the end of the 3D rotation.
+- Hardened box-sizing/overflow rules for shell/faces and made face images display:block to prevent tiny layout/baseline shifts.
+
+v67 — 2026-01-19
+- FIX: Eliminated remaining post-flip vertical drift by removing perspective-based 3D projection from the flip container (keeps flip rotation but prevents projection-induced Y shift).
+- FIX: Removed translateZ(0) from the rotating flip frame and added backface-visibility:hidden to the frame to prevent intermittent blanking/flicker during rotation.
+
+
+v68 — 2026-01-19
+- FIX: Restored reliable rendering during flip by removing backface-visibility from the rotating .cardFlip frame (only faces should hide their backfaces).
+- Added position: relative to .cardShell so the absolutely-positioned .cardFlip is always correctly contained.
+
+v69 — 2026-01-19
+- FIX: Eliminated flip-time disappearance by keeping the rotating .cardFlip frame continuously populated (no more clearing/removing all children during updates).
+- Updated card face refresh to replace each face node in place so the rotating element always has drawable content throughout the transition.
+
+v70 — 2026-01-19
+- FIX: Restored a stable 3D projection environment by applying perspective on the non-rotating .lane (stable parent) so rotateY doesn't visually "disappear" mid-flip.
+- FIX: Reduced 3D compositing blanking risk by avoiding paint containment on .cardShell (contain: layout only).
+
+v71 — 2026-01-19
+- FIX: Eliminated the reintroduced flip "drop" by removing perspective from .lane (layout/positioning context) and inserting a dedicated per-card .cardStage that owns perspective only.
+- The flip hierarchy is now: .cardShell (2D slide/position) → .cardStage (projection) → .cardFlip (rotateY) → faces. This keeps the rotating frame drawable (no disappearance) while keeping layout coordinates immune to 3D re-projection.
+
+v72 — 2026-01-19
+- FIX: Removed .cardShell from the transform chain at rest (translate: none) because a non-'none' translate (even 0px 0px) can reintroduce 3D projection drift during rotateY.
+- Deal slide still uses X-only translate transiently, but translate is cleared back to 'none' before and after the flip so the card no longer "drops" while flipping.
+
+v73 — 2026-01-19
+- Added .cardAnchor to separate 2D slide from 3D flip (structural prep).
+
+v74 — 2026-01-19
+- FIX: Replaced 3D rotateY flip with a pure 2D scaleX flip + crossfade between faces to eliminate vertical projection drift ('drop') while keeping the same flip timing and sounds.
+- Card structure remains stable (shell → anchor → stage → flip → two faces); rotating frame always has drawable content (no disappearance).
+
+v75 — 2026-01-19
+- FIX: Addressed persistent flip-time vertical "drop" by keeping the cardAnchor in a stable translate(0px,0px) state at rest.
+  Previously, toggling anchor.translate between '0px 0px' and 'none' could trigger compositor relayering that presented as a Y snap.
+- Packaging: produced a clean project-root zip (no stray mnt/data folders).
+
+v76 — 2026-01-19
+- FIX: Added runtime vertical drift compensation during flip.
+  Some browsers re-anchor composited layers when the flip transform begins, producing an apparent Y "drop" even with top:0 and X-only transforms.
+  v76 measures shell screen-top before the flip and applies a temporary translateY correction on .cardAnchor during the flip, then restores anchor translate after cleanup.
+- No changes to deal logic, timing, sounds, or slide direction.
+
+v77 — 2026-01-19
+  Fix: remove accidental duplicated flip block that introduced a JavaScript syntax error (Deal button unresponsive). No gameplay logic changes.
+
+v78 — 2026-01-19
+  Fix: remove v76 vertical "pin" compensation (translateY correction) that was causing cards to slide downward after flipping.
+  No changes to deal logic, timing, sounds, or slide direction.
+
+v79 — 2026-01-19
+  Safari-first stability pass:
+  - Removed use of the individual CSS `translate:` property and moved the deal slide to `transform: translate3d(...)` on .cardAnchor.
+    Safari can exhibit compositor relayering/rounding glitches when mixing individual transform properties with `transform`.
+  - Removed containment on .cardShell (contain: none) to reduce Safari blanking/flicker during layer promotion.
+  - Fixed a stray brace / missing flip block in animateLastDealtCard (JS syntax check now clean) and reinstated the intended
+    post-slide flip sequence using the existing audio-derived flip timing.
+
+v80 — 2026-01-19
+  Safari-first "boringly stable" flip:
+  - Replaced the negative-matrix flip (scaleX(-1) + opacity crossfade) with a squeeze-to-zero flip:
+    scaleX(1) → scaleX(0.02) → swap face visibility → scaleX(1).
+    This avoids Safari compositor re-layering that can show up as a brief blink or vertical "drop" when the transform sign flips.
+  - Removed opacity transitions on card faces; face swap happens at the midpoint while width is near-zero.
+  - Standardized deal slide to use ONLY `transform: translate3d(...)` (no individual `translate:`) in the live inline script.
+  No changes to deal logic, timing, sounds, or slide direction.
+\nv81 (Safari drop fix attempt): remove inset:0 absolute wrappers (cardAnchor/cardStage/cardFlip) -> use relative sizing; add isolation:isolate on cardShell. Goal: prevent 1-card-height compositor origin jump during flip.
+
+v82 (Safari-first stable flip):
+  - Replaced two-face front/back flip stack with a single .cardVisual element per card.
+  - Flip is now: scaleX squeeze -> swap content at midpoint -> scaleX expand (one element, one transform).
+  - Stored front markup per shell for midpoint swap; face-up state now sets content directly.
+  - Kept deal slide, timing, sounds, and direction unchanged.
+
+=== v83 ===
+Safari flip-drop structural fix: Introduced .cardMover as the ONLY element that receives slide translate3d.
+Rule enforced: no transforms on positioned/layout elements (.cardShell/.cardAnchor). Flip behavior unchanged.
+
+=== v84 ===
+Fix packaging/runtime code-path mismatch:
+- index.html now loads script.js (single source of truth) instead of an inlined legacy script.
+- Ensures the shipped runtime actually uses the v82 single-element .cardVisual flip and the v83 .cardMover slide ownership.
+No changes to deal logic, timing, sounds, slide direction, or flip behavior.
+
+=== v85 ===
+Documentation / guardrails:
+- Added detailed in-code comments explaining the Safari 1-card-height post-flip drop root cause and the architectural rule:
+    * NEVER transform positioned/layout elements (.cardShell/.cardAnchor)
+    * ONLY transform animation-only elements (.cardMover for slide, .cardVisual for flip)
+- Added an index.html warning comment to prevent reintroducing an inline legacy script (which previously caused Safari to run the wrong code path).
+No gameplay, timing, sound, or animation behavior changes.
+
+=== v86 ===
+Card back + shoe-size guardrail:
+- Replaced the face-down card pattern with the provided Himalaya/Everest card-back art (images/card_back_everest.png).
+- Implemented a deck-count (shoe size) guardrail:
+    * Deck count may be changed only before the first deal of a shoe.
+    * Once any card has been dealt (shoePos > 0), deck count is locked until the next shuffle/new shoe.
+    * Settings no longer force a reshuffle unless the deck count actually changes.
+
+=== v87 ===
+UX + card-back rendering fixes:
+- Settings: Deck selector now clearly shows a locked/disabled look when shoe-size is locked.
+- Settings: Attempting to change decks mid-shoe now immediately shows the explanatory popup and reverts the selection.
+- Card back: Removed the inner border overlay and removed the paper texture overlay from face-down cards to prevent the "pip-frame"/border/texture from showing through the back.
+
+=== v88 ===
+Settings rule-lock + defaults:
+- Defaults: Hit on Soft 17 = YES; Surrender = NO (and Stay/Stand on Soft 17 = NO via mutual exclusivity).
+- Mid-shoe guardrail: Table rules (decks, H17/S17, surrender) cannot be changed after the first deal until the next shuffle/new shoe.
+- UX: Locked rule controls are more obviously greyed/dimmed.
+- UX: Attempts to interact with locked rule controls do nothing except show an explanatory popup.
+- Popup layering: Informational popup now appears above Settings/About modals.
+
+=== v89 ===
+Card face proportions:
+- Inner blue frame enlarged ~10%.
+- Interior pips inside the frame reduced ~15%.
+- Corner suit pip (below rank) enlarged ~15%.
+
+
+
+=== v90 ===
+Help / Story scroll:
+- Added ? button next to the Settings gear.
+- New parchment-style scroll overlay with Tibetan prayer flags.
+- Unfurl animation on open; OK button to dismiss (and click outside to close).
+- Added in-game story + rules/instructions text.
+
+
+=== v91 ===
+Bust flow + UI:
+- If all player hands bust, dealer hole card is revealed but dealer does not draw.
+- Gear icon enlarged; help (?) button matches gear styling (no circle).
+- Disabled result popups (no in-game messaging).
+- Debug/status bar no longer auto-enables on Deal.
+
+
+=== v92B (Branch Point 1) ===
+Branch rationale:
+- We are starting this branch because too much time is being spent isolating a runtime bug.
+- v91 is treated as the stable baseline so we can preserve a working game.
+- This branch will be used for a separate attempt at adding graphical representations of the shoe and discard pile.
+
+Changes in v92B:
+- Removed the top-of-window debug/status banner entirely (no in-game debug UI).
+- Re-enabled end-of-hand result popups (in-game messaging restored).
+
+=== v93B (Targeted Refactor Branch) ===
+- Purpose: targeted refactor scaffolding to improve maintainability and isolate runtime/state bugs without changing gameplay behavior.
+- Rationale: v92B is a stable gameplay anchor; development time has been lost chasing a runtime bug and UI timing issues in tightly-coupled code. This branch begins a structural separation to support future features (especially graphical shoe + discard pile) with less risk.
+- Scope (this version): no gameplay/rule/UI behavior changes intended. Introduces DOM-agnostic card container classes (Shoe/DiscardPile/Hand) in cardholders.js and loads them before script.js.
+
+=== v94 (Gameplay/UI Fixes) ===
+- Purpose: implement post-v93B observed gameplay/UI sequencing fixes (non-refactor).
+- Changes:
+  - Dealer total display no longer updates until AFTER the hole-card flip completes (prevents early total reveal).
+  - Cut card behavior is now casino-realistic: when the cut card is reached mid-hand, the current hand finishes and the shoe is shuffled BETWEEN hands (not immediately).
+  - Shuffle overlay now appears over the dealer lane in a white box with large blue text, blinks during the shuffle sound, and disappears when the sound sequence ends. It has priority over other popups.
+
+=== v95B (Stability Repairs) ===
+- Restored reliable end-of-hand result popups (including player bust).
+- Dealer total sequencing hardened: total updates only after hole card is fully in place and revealed.
+- Cut card behavior preserved: finish current hand, then shuffle between hands.
+- Deck viewer window constrained smaller by default.
+
+
+v95B — 2026-01-22
+- FIX: Result popups restored: player bust now shows reliably; end-of-hand popups no longer auto-dismiss from the triggering click.
+- FIX: Dealer hole-card reveal sequencing: animate the hole-card flip and update dealer totals only after the reveal completes.
+- POLISH: Shuffle overlay blink frequency reduced ~50% and changed to smooth fade in/out.
+- UX: Deck Viewer popup window resized to a smaller, constrained default.
+
+=== v96B (Shuffle Overlay Timing) ===
+- Shuffle overlay now follows the requested timing cycle:
+  - Fully visible 1.0s
+  - Fade out 0.5s
+  - Hidden 0.25s
+  - Fade in 0.5s
+  - Fully visible 1.0s
+  (repeats)
+- Shuffle sound (riffle/bridge) plays exactly 3 times; overlay cycles continuously while those 3 plays are running, then completes its current cycle and disappears.
+
+
+=== v97B (Dealer Total After Dealer Animations) ===
+- Dealer total text is now gated by dealer card animation completion.
+- Totals update only after the dealer's newly dealt card is fully in position (no changes to the card animations themselves).
+- Implemented dealerVisibleCount + dealerTotalHold so the displayed total reflects only cards whose animations have completed.
+
+
+=== v98B (Shoe & Discard UI Mock in Control Panel) ===
+- Added shoe and discard pile tray icons to the control panel to the right of the ? button.
+- Shoe tray is open at the bottom; discard tray is open at the top.
+- Visual-only mock with default values: shoe 75% filled (blue), cut card line at 65%, discard 25% filled.
+- No changes to game logic/model; not wired to state yet.
+
+v99B
+- Shoe & discard icons wired to real shoe state (read-only UI)
+- Help/Instructions updated with Decks, Shoe, and Discards section
+
+=== v100B (UI Stability Pass) ===
+- Fixed control panel jiggle when enabling/disabling actions by making button metrics layout-stable (border space reserved; no size changes between states).
+- Enabled/disabled visual changes now rely on color/opacity only; no gameplay/model/animation changes.
+
+=== v101B (HUD Stability + Release Cleanup) ===
+- Fixed minor jiggle in the upper HUD row (bankroll / bet / chips-in-action) by locking box metrics and using tabular numerals so amount changes do not reflow the layout.
+- Turned DEV tools OFF for release: dev/test buttons and deck viewer are hidden.
+- Replaced the schematic prayer-flag strip in the About/Instructions scroll with a realistic Tibetan prayer flags image.
+
+
+v102B - UI: Cut card line pixel-stable (no drift) and prayer flags scaled 300% in About. Debug/dev tools remain OFF. (2026-01-22)
+
+v103B - UI: About prayer flags embedded in scroll content (no overlap) + 300% size; cut card line mapping fixed to move correctly and stay within shoe fill. (2026-01-22)
+
+v104B - UI: Prayer flags moved above About header, enlarged (+100%), cropped whitespace; reduced top gap. Cut card line now sinks with deal progress and stays inside shoe fill. (2026-01-22)
+
+v105B - UI: Cut card line now preserves fixed distance to top/end of shoe while dealing from bottom; line moves down with each deal. About prayer flags crop adjusted so flags are visible (moved down inside crop, slightly taller crop, tighter spacing). (2026-01-22)
+
+v106B - UI: About prayer flags visibility fix (crop/offset/background positioning) while keeping in-flow above title. (2026-01-22)
+
+v107B - UI: About prayer flags rendered as <img> for visibility; cropped/offset for proper placement above header. No other changes. (2026-01-22)
+
+v108B - UI: Removed About prayer flags image entirely (awaiting revised asset). No other changes. (2026-01-22)
+
+v109B - UI: Re-added About prayer flags using newly cropped transparent PNG (in-flow above header) with simple sizing/margins. (2026-01-22)
+
+v110B - UI: Prayer flags reduced to subtle ornamental divider (~120% width), no cropping or heavy styling. (2026-01-22)
+
+v116B — 2026-01-22
+- Settings: Soundtrack control changed from volume slider to simple Yes/No toggle (On/Off).
+- Soundtrack toggle applies on ACCEPT; CLOSE discards changes.
+
+v117B
+- Added Tibetan prayer flag artwork to the top of the About screen.
+
+v118B
+- Removed legacy prayer flag assets and replaced with gimped_flags.png (clean alpha).
+
+v119B — 2026-01-22
+- Removed prayer flag image from About screen (temporary) due to transparency display issues.
+
+
+v120B — 2026-01-23
+- Mobile/tablet: Added responsive UI scaling via --uiScale so cards/buttons fit iPad/iPhone landscape.
+- UX: Added portrait rotate overlay (landscape-only play).
+- Sound: Default soundtrack OFF (still available via Settings).

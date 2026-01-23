@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
 <title>Yeti Blackjack</title>
 
 <!-- Libre Baskerville -->
@@ -15,18 +15,19 @@
   --felt:#061a14;
   --felt2:#03211a;
   --gold:#d7b45a;
+  --uiScale: 1;
 
   /* Card size (shrunk ~15% vs earlier) */
-  --cardW: 204px;
-  --cardH: 286px; /* ~1.4 ratio */
-  --radius: 22px;
+  --cardW: calc(204px * var(--uiScale));
+  --cardH: calc(286px * var(--uiScale)); /* ~1.4 ratio */
+  --radius: calc(22px * var(--uiScale));
 
   --paper:#f7f3eb;
   --ink:#121212;
   --red:#b10d2e;
 
-  --hudFont: 26px;
-  --hudBoxH: 64px;
+  --hudFont: calc(26px * var(--uiScale));
+  --hudBoxH: calc(64px * var(--uiScale));
 
   --glowA: rgba(70, 150, 255, .95);
   --glowB: rgba(255, 215, 90, .95);
@@ -59,7 +60,7 @@ body.gameOver{
 
 .table{
   min-height:100vh;
-  padding:18px 16px 150px;
+  padding: calc(18px * var(--uiScale)) calc(16px * var(--uiScale)) calc(150px * var(--uiScale));
   max-width: 1180px;
   margin:0 auto;
 background-repeat: repeat;
@@ -1081,9 +1082,53 @@ border-bottom: 1px solid rgba(0,0,0,1.55);
 .switch .slider:before{ position: absolute; content: ""; height: 18px; width: 18px; left: 3px; top: 3px; border-radius: 50%; background: rgba(255,255,255,0.92); transition: .2s; }
 .switch input:checked + .slider{ background: rgba(255,255,255,0.32); }
 .switch input:checked + .slider:before{ transform: translateX(22px); }
+
+
+/* Portrait prompt (iPhone/iPad) */
+.rotateOverlay{
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0,0,0,0.72);
+  backdrop-filter: blur(6px);
+  z-index: 9999;
+  text-align: center;
+}
+.rotateOverlay .box{
+  max-width: 520px;
+  background: rgba(10,10,10,0.75);
+  border: 1px solid rgba(215,180,90,0.35);
+  border-radius: 18px;
+  padding: 22px 18px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+.rotateOverlay .title{
+  font-family: 'Libre Baskerville', serif;
+  font-weight: 700;
+  letter-spacing: .02em;
+  margin: 0 0 10px;
+  font-size: 20px;
+  color: var(--gold);
+}
+.rotateOverlay .msg{
+  margin: 0;
+  font-size: 16px;
+  line-height: 1.35;
+  color: #e9e9e9;
+}
+.hidden{ display:none !important; }
 </style>
 </head>
 <body>
+<div id="rotateOverlay" class="rotateOverlay hidden" aria-hidden="true">
+  <div class="box">
+    <div class="title">Rotate to landscape</div>
+    <p class="msg">Yeti Blackjack is designed for landscape screens. Please rotate your device to continue.</p>
+  </div>
+</div>
 <div class="table">
   <div id="dealerArea" class="area">
     <div class="headerline"><span id="dealerLabel">DEALER</span><span id="dealerValue" class="value"></span></div>
