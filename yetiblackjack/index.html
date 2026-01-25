@@ -1,15 +1,14 @@
-<!doctype html>
+<!DOCTYPE html>
+
 <html lang="en">
 <head>
 <meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"/>
+<meta content="width=device-width,initial-scale=1,viewport-fit=cover" name="viewport"/>
 <title>Yeti Blackjack</title>
-
 <!-- Libre Baskerville -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&display=swap" rel="stylesheet">
-
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Libre+Baskerville:wght@400;700&amp;display=swap" rel="stylesheet"/>
 <style>:root{
   color-scheme:dark;
   --felt:#061a14;
@@ -1120,86 +1119,378 @@ border-bottom: 1px solid rgba(0,0,0,1.55);
   color: #e9e9e9;
 }
 .hidden{ display:none !important; }
+
+
+/* v121C uniform scale wrapper (does not modify existing layout CSS) */
+#gameViewport{
+  position:fixed;
+  inset:0;
+  overflow:hidden;
+}
+#gameStage{
+  position:absolute;
+  left:0;
+  top:0;
+  /* IMPORTANT: prevent shrink-to-fit width (which collapses the v120B layout into a narrow column).
+     Stretch to viewport while measuring; JS will lock to the measured baseline dimensions. */
+  right:0;
+  bottom:0;
+  transform-origin: top left;
+  will-change: transform;
+}
+.tooSmallOverlay{
+  position:fixed;
+  inset:0;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  background:rgba(0,0,0,.55);
+  z-index:9998;
+}
+.tooSmallOverlay.hidden{ display:none; }
+.tooSmallOverlay .box{
+  max-width: 460px;
+  margin: 0 16px;
+  padding: 18px 18px 16px;
+  border-radius: 14px;
+  background: rgba(18,18,18,.92);
+  border: 1px solid rgba(255,255,255,.14);
+  color: #f7e6b0;
+  text-align:center;
+  font-family: 'Libre Baskerville', serif;
+}
+.tooSmallOverlay .title{
+  font-weight:900;
+  letter-spacing:.06em;
+  text-transform:uppercase;
+  margin-bottom:10px;
+}
+.tooSmallOverlay .msg{
+  margin:0;
+  opacity:.92;
+  line-height:1.35;
+}
 </style>
 </head>
 <body>
-<div id="rotateOverlay" class="rotateOverlay hidden" aria-hidden="true">
-  <div class="box">
-    <div class="title">Rotate to landscape</div>
-    <p class="msg">Yeti Blackjack is designed for landscape screens. Please rotate your device to continue.</p>
-  </div>
+<div aria-hidden="true" class="rotateOverlay hidden" id="rotateOverlay">
+<div class="box">
+<div class="title">Rotate to landscape</div>
+<p class="msg">Yeti Blackjack is designed for landscape screens. Please rotate your device to continue.</p>
 </div>
-<div class="table">
-  <div id="dealerArea" class="area">
-    <div class="headerline"><span id="dealerLabel">DEALER</span><span id="dealerValue" class="value"></span></div>
-    <div id="dealerLane" class="lane"></div>
-    <div id="shuffleOverlay" class="shuffleOverlay hidden" aria-hidden="true"><div class="shuffleBox">SHUFFLING…</div></div>
-
-  </div>
-
-  <div id="playerArea" class="area">
-    <div class="headerline"><span id="playerLabel">PLAYER</span><span id="playerValue" class="value"></span></div>
-    <div id="playerLane" class="lane"></div>
-  </div>
+</div><div aria-hidden="true" class="tooSmallOverlay hidden" id="tooSmallOverlay"><div class="box"><div class="title">Window too small</div><p class="msg">Please enlarge the window (or use a larger screen) to continue.</p></div></div><div id="gameViewport"><div id="gameStage"><div class="table">
+<div class="area" id="dealerArea">
+<div class="headerline"><span id="dealerLabel">DEALER</span><span class="value" id="dealerValue"></span></div>
+<div class="lane" id="dealerLane"></div>
+<div aria-hidden="true" class="shuffleOverlay hidden" id="shuffleOverlay"><div class="shuffleBox">SHUFFLING…</div></div>
 </div>
-
-<div class="controls">
-  <div class="controlsInner">
-    <div class="hudRow">
-      <div class="hudBox" id="bankrollBox" >
-        <div class="label">BANKROLL</div>
-        <div class="amount" id="bankrollAmt">$500</div>
-      </div>
-
-      <div class="hudBox" id="betBox">
-        <div class="label">BET</div>
-        <div class="amount" id="betAmt">$25</div>
-        <div class="betControls">
-          <button class="arrowBtn arrowDown" id="betDown" aria-label="Decrease bet">▼</button>
-          <button class="arrowBtn arrowUp" id="betUp" aria-label="Increase bet">▲</button>
-        </div>
-      </div>
-
-
-      <div class="hudBox" id="actionBox">
-        <div class="label">CHIPS IN ACTION</div>
-        <div class="amount" id="actionAmt">$0</div>
-      </div>
-    </div>
-
-    <div class="actionsRow">
-      <button class="btn" id="dealBtn">DEAL</button>
-      <button class="btn secondary" id="hitBtn" disabled>HIT</button>
-      <button class="btn secondary" id="standBtn" disabled>STAND</button>
-      <button class="btn secondary" id="doubleBtn" disabled>DOUBLE</button>
-      <button class="btn secondary" id="splitBtn" disabled>SPLIT</button>
-      <button class="btn secondary" id="surrenderBtn" disabled>SURRENDER</button>
-      <button class="gear" id="gearBtn" title="Settings">⚙︎</button>
-      <button class="helpBtn" id="helpBtn" title="About & Instructions" aria-label="About & Instructions">?</button>
-      <div class="shoeDiscardWrap" aria-label="Shoe and discard indicator (visual mock)">
-        <div class="trayIcon shoeTray" id="shoeIcon" aria-label="Shoe (mock)">
-          <div class="usable">
-            <div class="shoeFill"></div>
-            <div class="cutCardLine"></div>
-          </div>
-        </div>
-        <div class="trayIcon discardTray" id="discardIcon" aria-label="Discard pile (mock)">
-          <div class="usable">
-            <div class="discardFill"></div>
-          </div>
-        </div>
-      </div>
-
-    </div>
-
-    <div class="smallRow" id="devToolsRow">
-      <button class="toggle" id="testSplitsBtn">Test Splits: OFF</button>
-      <button class="toggle" id="testInsBJBtn">Test Insurance (BJ): OFF</button>
-      <button class="toggle" id="testInsNoBJBtn">Test Insurance (No BJ): OFF</button>
-      <button class="toggle" id="deckViewerBtn">Deck Viewer: OFF</button>
-    </div>
-  </div>
+<div class="area" id="playerArea">
+<div class="headerline"><span id="playerLabel">PLAYER</span><span class="value" id="playerValue"></span></div>
+<div class="lane" id="playerLane"></div>
 </div>
+</div><div class="controls">
+<div class="controlsInner">
+<div class="hudRow">
+<div class="hudBox" id="bankrollBox">
+<div class="label">BANKROLL</div>
+<div class="amount" id="bankrollAmt">$500</div>
+</div>
+<div class="hudBox" id="betBox">
+<div class="label">BET</div>
+<div class="amount" id="betAmt">$25</div>
+<div class="betControls">
+<button aria-label="Decrease bet" class="arrowBtn arrowDown" id="betDown">▼</button>
+<button aria-label="Increase bet" class="arrowBtn arrowUp" id="betUp">▲</button>
+</div>
+</div>
+<div class="hudBox" id="actionBox">
+<div class="label">CHIPS IN ACTION</div>
+<div class="amount" id="actionAmt">$0</div>
+</div>
+</div>
+<div class="actionsRow">
+<button class="btn" id="dealBtn">DEAL</button>
+<button class="btn secondary" disabled="" id="hitBtn">HIT</button>
+<button class="btn secondary" disabled="" id="standBtn">STAND</button>
+<button class="btn secondary" disabled="" id="doubleBtn">DOUBLE</button>
+<button class="btn secondary" disabled="" id="splitBtn">SPLIT</button>
+<button class="btn secondary" disabled="" id="surrenderBtn">SURRENDER</button>
+<button class="gear" id="gearBtn" title="Settings">⚙︎</button>
+<button aria-label="About &amp; Instructions" class="helpBtn" id="helpBtn" title="About &amp; Instructions">?</button>
+<div aria-label="Shoe and discard indicator (visual mock)" class="shoeDiscardWrap">
+<div aria-label="Shoe (mock)" class="trayIcon shoeTray" id="shoeIcon">
+<div class="usable">
+<div class="shoeFill"></div>
+<div class="cutCardLine"></div>
+</div>
+</div>
+<div aria-label="Discard pile (mock)" class="trayIcon discardTray" id="discardIcon">
+<div class="usable">
+<div class="discardFill"></div>
+</div>
+</div>
+</div>
+</div>
+<div class="smallRow" id="devToolsRow">
+<button class="toggle" id="testSplitsBtn">Test Splits: OFF</button>
+<button class="toggle" id="testInsBJBtn">Test Insurance (BJ): OFF</button>
+<button class="toggle" id="testInsNoBJBtn">Test Insurance (No BJ): OFF</button>
+<button class="toggle" id="deckViewerBtn">Deck Viewer: OFF</button>
+</div>
+</div>
+</div><div aria-label="About and Instructions" aria-modal="true" class="modalOverlay hidden" id="helpModal" role="dialog">
+<div class="scrollWrap" role="document">
+<div class="scrollCard">
+<div aria-hidden="true" class="scrollTopRoll"></div>
+<div class="scrollContent">
+<div aria-hidden="true" class="prayerWrap">
+</div>
+<h2>🏔️ About the Himalaya Casino</h2>
+<p>High in the Himalayas stands a casino unlike any other.</p>
+<p>Years ago, a legendary Las Vegas casino mogul vanished during a solo trek near Everest. The truth never reached the papers: he was captured by yetis. While awaiting his fate, he shuffled cards and taught them blackjack. The yetis were fascinated. What began as curiosity became joy, then pride. Instead of eating him, they made him their chief. Blackjack gave their community structure, competition, and a shared craft. Together, they built The Himalaya Casino, a high-altitude temple of green felt and clean odds. The mogul eventually returned home, but the casino remains—run exclusively by yetis, for players who respect the game.</p>
+<p><strong>Welcome to the Himalaya.</strong></p>
+<h2>🃏 Blackjack Rules at the Himalaya</h2>
+<h3>Objective</h3>
+<p>Beat the dealer by getting closer to 21 without going over, or by having the dealer bust.</p>
+<h3>Card Values</h3>
+<ul>
+<li>Cards 2–10: face value</li>
+<li>Jack, Queen, King: 10</li>
+<li>Ace: 1 or 11, whichever is more favorable</li>
+</ul>
+<h3>The Deal</h3>
+<ul>
+<li>You are dealt two cards, both face up</li>
+<li>The dealer receives two cards: one face up, one face down</li>
+</ul>
+<h3>Blackjack</h3>
+<ul>
+<li>A blackjack is an Ace plus a 10-value card on the initial two-card deal only</li>
+<li>A 21 made with more than two cards is not a blackjack</li>
+<li>Blackjack pays 3:2</li>
+<li>If both player and dealer have blackjack, the hand is a push</li>
+</ul>
+<h3>🎯 Player Options</h3>
+<p>On your turn, you may choose:</p>
+<ul>
+<li><strong>Hit</strong> – Take another card</li>
+<li><strong>Stand</strong> – Keep your current hand</li>
+<li><strong>Double Down</strong> – Double your bet and receive exactly one additional card</li>
+<li><strong>Split</strong> – If your first two cards are the same rank, split them into two hands, each with its own bet</li>
+<li><strong>Surrender</strong> – Give up the hand immediately and recover half your bet</li>
+</ul>
+<h3>🏳️ Surrender Rules</h3>
+<ul>
+<li>Surrender is only available before taking any other action</li>
+<li>When you surrender, you forfeit half of your original bet; the remaining half is returned</li>
+<li>If the dealer shows an Ace or a 10-value card, surrender is resolved after the dealer checks for blackjack</li>
+<li>Once you hit, stand, double, or split, surrender is no longer available</li>
+</ul>
+<p>Surrender is a strategic option meant to reduce losses in hands where the odds strongly favor the dealer.</p>
+<h3>🧑‍🏫 Dealer Rules</h3>
+<ul>
+<li>Dealer plays only after all player hands are completed</li>
+<li>Dealer must hit on 16 or less</li>
+<li>Dealer behavior on soft 17 depends on table settings:
+            <ul>
+<li>Dealer may hit soft 17 (H17)</li>
+<li>Or stand on soft 17 (S17)</li>
+</ul>
+</li>
+</ul>
+<p>The soft-17 rule is configurable by the player in the Settings menu.</p>
+<h3>💥 Busts and Pushes</h3>
+<ul>
+<li>Any hand totaling over 21 busts and loses immediately</li>
+<li>If the dealer busts, all remaining player hands win</li>
+<li>If you and the dealer finish with the same total, the hand is a push and your bet is returned</li>
+</ul>
+<h3>🛡️ Insurance</h3>
+<ul>
+<li>Insurance is offered when the dealer’s upcard is an Ace</li>
+<li>The maximum insurance bet is one-half of the original wager</li>
+<li>Insurance pays 2:1 if the dealer has blackjack</li>
+<li>If the dealer does not have blackjack, the insurance bet is lost</li>
+</ul>
+<p>Insurance is optional and rarely favorable over the long run.</p>
+<h3>⚙️ Game Settings</h3>
+<p>The Himalaya allows you to customize how the game looks and plays.</p>
+<p>Depending on your configuration, settings may include:</p>
+<ul>
+<li>Number of decks in the shoe</li>
+<li>Table limits and starting bankroll</li>
+<li>Dealer rules, including whether the dealer hits or stands on soft 17</li>
+<li>Availability of options such as surrender and insurance</li>
+</ul>
+<h3>🂠 Decks, Shoe, and Discards</h3>
+<p>This game is played using a simulated casino shoe.</p>
+<ul>
+<li>The <strong>number of decks</strong> may be adjusted <strong>only before the first hand of a shoe</strong>, or <strong>after a shuffle has completed</strong>. Once cards are being dealt, the deck count is locked until the next shuffle.</li>
+</ul>
+<p>To help you keep track of the shoe, two visual indicators are shown in the control panel:</p>
+<ul>
+<li><strong>Shoe (left icon)</strong> — shows the cards remaining in the shoe. The <strong>blue fill</strong> represents how much of the shoe is left, and the <strong>yellow line</strong> marks the position of the <strong>cut card</strong>. Cards are dealt from the <strong>bottom of the shoe</strong>, and the remaining stack gradually shrinks downward as play continues. When the cut card reaches the bottom, the current hand is completed and the shoe is shuffled before the next hand.</li>
+<li><strong>Discard pile (right icon)</strong> — shows cards that have already been dealt and discarded. The discard pile fills upward as the shoe empties.</li>
+</ul>
+<p>Together, these indicators show how deep you are into the shoe, making it easier to judge deck penetration and, for those who wish to do so, practice <strong>true count</strong> calculations while playing.</p>
+<h3>When Settings Apply</h3>
+<p>To keep gameplay consistent and fair:</p>
+<ul>
+<li>All settings except bankroll are locked after the first deal of a shoe</li>
+<li>Locked settings become available again only after the shoe is completed</li>
+<li>Bankroll may be adjusted at any time</li>
+</ul>
+<h3>❄️ The Yeti Way</h3>
+<p>At the Himalaya, the shuffle is honest, the rules are clear, and discipline matters. Play patiently, respect the math, and remember: sometimes the smartest move is knowing when to surrender.</p>
+<p><strong>Good luck at the tables.</strong></p>
+</div>
+<div class="scrollOkRow">
+<button id="helpOkBtn">OK</button>
+</div>
+</div>
+</div>
+</div><script src="cardholders.js"></script><script src="script.js"></script><div aria-label="Result" aria-modal="true" class="popupOverlay hidden" id="resultPopup" role="dialog">
+<div class="popupCard">
+<div class="popupText" id="popupText">Result</div>
+</div>
+</div><div aria-label="Game Over" aria-modal="true" class="modalOverlay hidden" id="endModal" role="dialog">
+<div class="modalCard">
+<div class="modalTitle">Thank you for playing</div>
+<div class="modalNote">Game over.</div>
+</div>
+</div><div aria-label="Insurance" aria-modal="true" class="modalOverlay hidden" id="insuranceModal" role="dialog">
+<div class="modalCard">
+<div class="modalTitle" id="insuranceTitle">Insurance?</div>
+<div class="modalNote" id="insuranceNote">Dealer shows an Ace. You may place an insurance bet (pays 2:1 if dealer has blackjack).</div>
+<div class="modalRow" id="insuranceChoiceRow">
+<button class="btn" id="insYesBtn" type="button">YES</button>
+<button class="btn secondary" id="insNoBtn" type="button">NO</button>
+</div>
+<div class="modalRow" id="insuranceBetRow" style="display:none; flex-direction:column; align-items:stretch; gap:10px;">
+<div style="display:flex; align-items:center; gap:10px;">
+<div style="font-weight:900; color:#f7e6b0; min-width:44px;">Bet:</div>
+<input id="insAmt" min="0" step="0.5" style="flex:1;" type="number"/>
+</div>
+<div class="modalNote" id="insuranceMaxNote" style="margin-top:-2px;"></div>
+<div style="display:flex; gap:10px; justify-content:center;">
+<button class="btn secondary" id="insCancelBtn" type="button">CANCEL</button>
+<button class="btn" id="insConfirmBtn" type="button">CONFIRM</button>
+</div>
+</div>
+</div>
+</div><div aria-label="Add Chips" aria-modal="true" class="modalOverlay hidden" id="addChipsModal" role="dialog" style="display:none; pointer-events:none;">
+<div class="modal">
+<div class="modalTitle">Add Chips</div>
+<div class="modalText">Enter an amount to add to your bankroll (rounded to the nearest $5).</div>
+<div class="modalRow" style="justify-content:center; margin-top:14px; gap:10px;">
+<input class="settingsInput" id="addChipsAmt" inputmode="numeric" pattern="[0-9]*" placeholder="$0" style="flex:1; max-width:220px;" type="text"/>
+</div>
+<div class="modalRow" style="justify-content:center; margin-top:16px; gap:12px;">
+<button class="btn secondary" id="addChipsCancelBtn" type="button">CANCEL</button>
+<button class="btn defaultBtn" id="addChipsOkBtn" type="button">ACCEPT</button>
+</div>
+</div>
+</div><div aria-label="Settings" aria-modal="true" class="modalOverlay hidden" id="settingsModal" role="dialog" style="display:none; pointer-events:none;">
+<div class="modal settingsModal">
+<div class="modalTitle">Settings</div>
+<table class="settingsTable" role="presentation">
+<tr>
+<td class="settingsLabel">Bankroll</td>
+<td>
+<input class="settingsInput" id="settingsBankroll" inputmode="numeric" pattern="[0-9]*" type="text"/>
+</td>
+</tr>
+<tr>
+<td class="settingsLabel">Number of Decks</td>
+<td>
+<select class="settingsSelect" id="settingsDecks">
+<option value="2">2</option>
+<option value="4">4</option>
+<option value="6">6</option>
+<option value="8">8</option>
+</select>
+</td>
+</tr>
+<tr>
+<td class="settingsLabel">Hit on Soft 17</td>
+<td class="settingsRadios">
+<label><input id="hitSoft17Yes" name="hitSoft17" type="radio" value="yes"/> Yes</label>
+<label><input id="hitSoft17No" name="hitSoft17" type="radio" value="no"/> No</label>
+</td>
+</tr>
+<tr>
+<td class="settingsLabel">Stay on Soft 17</td>
+<td class="settingsRadios">
+<label><input id="staySoft17Yes" name="staySoft17" type="radio" value="yes"/> Yes</label>
+<label><input id="staySoft17No" name="staySoft17" type="radio" value="no"/> No</label>
+</td>
+</tr>
+<tr>
+<td class="settingsLabel">Surrender</td>
+<td class="settingsRadios">
+<label><input id="surrenderYes" name="surrender" type="radio" value="yes"/> Yes</label>
+<label><input id="surrenderNo" name="surrender" type="radio" value="no"/> No</label>
+</td>
+</tr>
+<tr>
+<td class="settingsLabel">Game Sounds</td>
+<td class="settingsRadios">
+<label><input id="gameSoundsYes" name="gameSounds" type="radio" value="yes"/> Yes</label>
+<label><input id="gameSoundsNo" name="gameSounds" type="radio" value="no"/> No</label>
+</td>
+</tr>
+<tr>
+<td class="settingsLabel">Soundtrack</td>
+<td class="settingsRadios">
+<label><input id="soundtrackYes" name="soundtrack" type="radio" value="yes"/> Yes</label>
+<label><input id="soundtrackNo" name="soundtrack" type="radio" value="no"/> No</label>
+</td>
+</tr>
+</table>
+<div class="modalRow" style="justify-content:center; margin-top:14px; gap:12px;">
+<button class="btn secondary" id="settingsCloseBtn" type="button">CLOSE</button>
+<button class="btn defaultBtn" id="settingsSaveBtn" type="button">ACCEPT</button>
+</div>
+</div>
+</div><div aria-label="About" aria-modal="true" class="modalOverlay hidden" id="aboutModal" role="dialog" style="display:none; pointer-events:none;">
+<div class="modal" style="max-width:640px; width:92%; background:#ffffff; color:#111; border-radius:18px; padding:18px 18px 16px;">
+<div class="modalTitle" style="color:#111;">About</div>
+<pre id="aboutFlags" style="text-align:center;margin-bottom:12px;"></pre></div>
+<div id="aboutText" style="white-space:pre-wrap; margin:10px 0 0; font-size:14px; line-height:1.35; color:#111;">
+<div class="modalRow" style="justify-content:center; margin-top:14px; gap:12px;">
+<button class="btn defaultBtn" id="aboutCloseBtn" type="button">CLOSE</button>
+</div>
+</div>
+</div><div aria-label="Funds" aria-modal="true" class="modalOverlay hidden" id="brokeModal" role="dialog" style="display:none; pointer-events:none;">
+<div class="modalCard">
+<div class="modalTitle" id="fundsTitle">Insufficient Funds</div>
+<div class="modalNote" id="fundsNote" style="font-size:18px;">You don't have enough bankroll.</div>
+<div class="modalRow" id="fundsChoiceRow" style="justify-content:center; margin-top:16px; gap:12px;">
+<button class="btn" id="addFundsBtn" type="button">ADD CHIPS</button>
+<button class="btn secondary" id="continueHandBtn" type="button">CONTINUE HAND</button>
+<button class="btn secondary" id="leaveTableBtn" style="display:none;" type="button">LEAVE TABLE</button>
+</div>
+<div class="modalRow" id="fundsAddRow" style="display:none; flex-direction:column; align-items:stretch; gap:10px; margin-top:12px;">
+<div style="display:flex; align-items:center; gap:10px;">
+<div style="font-weight:900; color:#f7e6b0; min-width:54px;">Add:</div>
+<input id="fundsAmt" min="0.5" step="0.5" style="flex:1;" type="number">
+</input></div>
+<div style="display:flex; gap:10px; justify-content:center;">
+<button class="btn secondary" id="fundsCancelBtn" type="button">CANCEL</button>
+<button class="btn" id="fundsConfirmBtn" type="button">CONFIRM</button>
+</div>
+</div>
+</div>
+</div><div aria-label="Insurance Result" aria-modal="true" class="modalOverlay hidden" id="insuranceResultModal" role="dialog">
+<div class="modalCard">
+<div class="modalTitle" id="insuranceResultTitle">Insurance</div>
+<div class="modalNote" id="insuranceResultText">Result</div>
+<div class="modalRow" style="margin-top:16px;">
+<button class="btn" id="insResultOkBtn" type="button">OK</button>
+</div>
+</div>
+</div></div></div>
+
 
 <!--
   IMPORTANT (v84 Safari fix):
@@ -1210,327 +1501,21 @@ border-bottom: 1px solid rgba(0,0,0,1.55);
     - index.html: markup + styles
     - script.js: all game logic + animations
 -->
-
 <!-- Help Scroll Modal -->
-<div id="helpModal" class="modalOverlay hidden" role="dialog" aria-modal="true" aria-label="About and Instructions">
-  <div class="scrollWrap" role="document">
-    <div class="scrollCard">
-      <div class="scrollTopRoll" aria-hidden="true"></div>
-      <div class="scrollContent">
-        <div class="prayerWrap" aria-hidden="true">
-          </div>
-
-<h2>🏔️ About the Himalaya Casino</h2>
 
 
 
-        <p>High in the Himalayas stands a casino unlike any other.</p>
-
-        <p>Years ago, a legendary Las Vegas casino mogul vanished during a solo trek near Everest. The truth never reached the papers: he was captured by yetis. While awaiting his fate, he shuffled cards and taught them blackjack. The yetis were fascinated. What began as curiosity became joy, then pride. Instead of eating him, they made him their chief. Blackjack gave their community structure, competition, and a shared craft. Together, they built The Himalaya Casino, a high-altitude temple of green felt and clean odds. The mogul eventually returned home, but the casino remains—run exclusively by yetis, for players who respect the game.</p>
-
-        <p><strong>Welcome to the Himalaya.</strong></p>
-
-        <h2>🃏 Blackjack Rules at the Himalaya</h2>
-
-        <h3>Objective</h3>
-        <p>Beat the dealer by getting closer to 21 without going over, or by having the dealer bust.</p>
-
-        <h3>Card Values</h3>
-        <ul>
-          <li>Cards 2–10: face value</li>
-          <li>Jack, Queen, King: 10</li>
-          <li>Ace: 1 or 11, whichever is more favorable</li>
-        </ul>
-
-        <h3>The Deal</h3>
-        <ul>
-          <li>You are dealt two cards, both face up</li>
-          <li>The dealer receives two cards: one face up, one face down</li>
-        </ul>
-
-        <h3>Blackjack</h3>
-        <ul>
-          <li>A blackjack is an Ace plus a 10-value card on the initial two-card deal only</li>
-          <li>A 21 made with more than two cards is not a blackjack</li>
-          <li>Blackjack pays 3:2</li>
-          <li>If both player and dealer have blackjack, the hand is a push</li>
-        </ul>
-
-        <h3>🎯 Player Options</h3>
-        <p>On your turn, you may choose:</p>
-        <ul>
-          <li><strong>Hit</strong> – Take another card</li>
-          <li><strong>Stand</strong> – Keep your current hand</li>
-          <li><strong>Double Down</strong> – Double your bet and receive exactly one additional card</li>
-          <li><strong>Split</strong> – If your first two cards are the same rank, split them into two hands, each with its own bet</li>
-          <li><strong>Surrender</strong> – Give up the hand immediately and recover half your bet</li>
-        </ul>
-
-        <h3>🏳️ Surrender Rules</h3>
-        <ul>
-          <li>Surrender is only available before taking any other action</li>
-          <li>When you surrender, you forfeit half of your original bet; the remaining half is returned</li>
-          <li>If the dealer shows an Ace or a 10-value card, surrender is resolved after the dealer checks for blackjack</li>
-          <li>Once you hit, stand, double, or split, surrender is no longer available</li>
-        </ul>
-        <p>Surrender is a strategic option meant to reduce losses in hands where the odds strongly favor the dealer.</p>
-
-        <h3>🧑‍🏫 Dealer Rules</h3>
-        <ul>
-          <li>Dealer plays only after all player hands are completed</li>
-          <li>Dealer must hit on 16 or less</li>
-          <li>Dealer behavior on soft 17 depends on table settings:
-            <ul>
-              <li>Dealer may hit soft 17 (H17)</li>
-              <li>Or stand on soft 17 (S17)</li>
-            </ul>
-          </li>
-        </ul>
-        <p>The soft-17 rule is configurable by the player in the Settings menu.</p>
-
-        <h3>💥 Busts and Pushes</h3>
-        <ul>
-          <li>Any hand totaling over 21 busts and loses immediately</li>
-          <li>If the dealer busts, all remaining player hands win</li>
-          <li>If you and the dealer finish with the same total, the hand is a push and your bet is returned</li>
-        </ul>
-
-        <h3>🛡️ Insurance</h3>
-        <ul>
-          <li>Insurance is offered when the dealer’s upcard is an Ace</li>
-          <li>The maximum insurance bet is one-half of the original wager</li>
-          <li>Insurance pays 2:1 if the dealer has blackjack</li>
-          <li>If the dealer does not have blackjack, the insurance bet is lost</li>
-        </ul>
-        <p>Insurance is optional and rarely favorable over the long run.</p>
-
-        <h3>⚙️ Game Settings</h3>
-        <p>The Himalaya allows you to customize how the game looks and plays.</p>
-        <p>Depending on your configuration, settings may include:</p>
-        <ul>
-          <li>Number of decks in the shoe</li>
-          <li>Table limits and starting bankroll</li>
-          <li>Dealer rules, including whether the dealer hits or stands on soft 17</li>
-          <li>Availability of options such as surrender and insurance</li>
-        </ul>
-
-        <h3>🂠 Decks, Shoe, and Discards</h3>
-        <p>This game is played using a simulated casino shoe.</p>
-        <ul>
-          <li>The <strong>number of decks</strong> may be adjusted <strong>only before the first hand of a shoe</strong>, or <strong>after a shuffle has completed</strong>. Once cards are being dealt, the deck count is locked until the next shuffle.</li>
-        </ul>
-
-        <p>To help you keep track of the shoe, two visual indicators are shown in the control panel:</p>
-        <ul>
-          <li><strong>Shoe (left icon)</strong> — shows the cards remaining in the shoe. The <strong>blue fill</strong> represents how much of the shoe is left, and the <strong>yellow line</strong> marks the position of the <strong>cut card</strong>. Cards are dealt from the <strong>bottom of the shoe</strong>, and the remaining stack gradually shrinks downward as play continues. When the cut card reaches the bottom, the current hand is completed and the shoe is shuffled before the next hand.</li>
-          <li><strong>Discard pile (right icon)</strong> — shows cards that have already been dealt and discarded. The discard pile fills upward as the shoe empties.</li>
-        </ul>
-
-        <p>Together, these indicators show how deep you are into the shoe, making it easier to judge deck penetration and, for those who wish to do so, practice <strong>true count</strong> calculations while playing.</p>
-
-
-        <h3>When Settings Apply</h3>
-        <p>To keep gameplay consistent and fair:</p>
-        <ul>
-          <li>All settings except bankroll are locked after the first deal of a shoe</li>
-          <li>Locked settings become available again only after the shoe is completed</li>
-          <li>Bankroll may be adjusted at any time</li>
-        </ul>
-
-        <h3>❄️ The Yeti Way</h3>
-        <p>At the Himalaya, the shuffle is honest, the rules are clear, and discipline matters. Play patiently, respect the math, and remember: sometimes the smartest move is knowing when to surrender.</p>
-        <p><strong>Good luck at the tables.</strong></p>
-      </div>
-
-      <div class="scrollOkRow">
-        <button id="helpOkBtn">OK</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-
-<script src="cardholders.js"></script>
-<script src="script.js"></script>
-
-<div id="resultPopup" class="popupOverlay hidden" role="dialog" aria-modal="true" aria-label="Result">
-  <div class="popupCard">
-    <div id="popupText" class="popupText">Result</div>
-  </div>
-</div>
 
 <!-- Terminal end-state modal (Leave Table) -->
-<div id="endModal" class="modalOverlay hidden" role="dialog" aria-modal="true" aria-label="Game Over">
-  <div class="modalCard">
-    <div class="modalTitle">Thank you for playing</div>
-    <div class="modalNote">Game over.</div>
-  </div>
-</div>
-
-
-
-<div id="insuranceModal" class="modalOverlay hidden" role="dialog" aria-modal="true" aria-label="Insurance">
-  <div class="modalCard">
-    <div class="modalTitle" id="insuranceTitle">Insurance?</div>
-    <div class="modalNote" id="insuranceNote">Dealer shows an Ace. You may place an insurance bet (pays 2:1 if dealer has blackjack).</div>
-    <div class="modalRow" id="insuranceChoiceRow">
-      <button class="btn" id="insYesBtn" type="button">YES</button>
-      <button class="btn secondary" id="insNoBtn" type="button">NO</button>
-    </div>
-    <div id="insuranceBetRow" class="modalRow" style="display:none; flex-direction:column; align-items:stretch; gap:10px;">
-      <div style="display:flex; align-items:center; gap:10px;">
-        <div style="font-weight:900; color:#f7e6b0; min-width:44px;">Bet:</div>
-        <input id="insAmt" type="number" min="0" step="0.5" style="flex:1;" />
-      </div>
-      <div class="modalNote" id="insuranceMaxNote" style="margin-top:-2px;"></div>
-      <div style="display:flex; gap:10px; justify-content:center;">
-        <button class="btn secondary" id="insCancelBtn" type="button">CANCEL</button>
-        <button class="btn" id="insConfirmBtn" type="button">CONFIRM</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-
 
 
 <!-- Add Chips Modal (virtual chips, not real money) -->
-<div id="addChipsModal" class="modalOverlay hidden" role="dialog" aria-modal="true" aria-label="Add Chips" style="display:none; pointer-events:none;">
-  <div class="modal">
-    <div class="modalTitle">Add Chips</div>
-    <div class="modalText">Enter an amount to add to your bankroll (rounded to the nearest $5).</div>
-    <div class="modalRow" style="justify-content:center; margin-top:14px; gap:10px;">
-      <input id="addChipsAmt" class="settingsInput" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="$0" style="flex:1; max-width:220px;" />
-    </div>
-    <div class="modalRow" style="justify-content:center; margin-top:16px; gap:12px;">
-      <button class="btn secondary" id="addChipsCancelBtn" type="button">CANCEL</button>
-      <button class="btn defaultBtn" id="addChipsOkBtn" type="button">ACCEPT</button>
-    </div>
-  </div>
-</div>
 
 <!-- Settings Modal -->
-<div id="settingsModal" class="modalOverlay hidden" role="dialog" aria-modal="true" aria-label="Settings" style="display:none; pointer-events:none;">
-  <div class="modal settingsModal">
-    <div class="modalTitle">Settings</div>
-
-    <table class="settingsTable" role="presentation">
-      <tr>
-        <td class="settingsLabel">Bankroll</td>
-        <td>
-          <input id="settingsBankroll" class="settingsInput" type="text" inputmode="numeric" pattern="[0-9]*" />
-        </td>
-      </tr>
-
-      <tr>
-        <td class="settingsLabel">Number of Decks</td>
-        <td>
-          <select id="settingsDecks" class="settingsSelect">
-            <option value="2">2</option>
-            <option value="4">4</option>
-            <option value="6">6</option>
-            <option value="8">8</option>
-          </select>
-        </td>
-      </tr>
-
-      <tr>
-        <td class="settingsLabel">Hit on Soft 17</td>
-        <td class="settingsRadios">
-          <label><input type="radio" name="hitSoft17" id="hitSoft17Yes" value="yes"> Yes</label>
-          <label><input type="radio" name="hitSoft17" id="hitSoft17No" value="no"> No</label>
-        </td>
-      </tr>
-
-      <tr>
-        <td class="settingsLabel">Stay on Soft 17</td>
-        <td class="settingsRadios">
-          <label><input type="radio" name="staySoft17" id="staySoft17Yes" value="yes"> Yes</label>
-          <label><input type="radio" name="staySoft17" id="staySoft17No" value="no"> No</label>
-        </td>
-      </tr>
-
-      <tr>
-        <td class="settingsLabel">Surrender</td>
-        <td class="settingsRadios">
-          <label><input type="radio" name="surrender" id="surrenderYes" value="yes"> Yes</label>
-          <label><input type="radio" name="surrender" id="surrenderNo" value="no"> No</label>
-        </td>
-      </tr>
-
-      <tr>
-        <td class="settingsLabel">Game Sounds</td>
-        <td class="settingsRadios">
-          <label><input type="radio" name="gameSounds" id="gameSoundsYes" value="yes"> Yes</label>
-          <label><input type="radio" name="gameSounds" id="gameSoundsNo" value="no"> No</label>
-        </td>
-      </tr>
-
-      
-      <tr>
-        <td class="settingsLabel">Soundtrack</td>
-        <td class="settingsRadios">
-          <label><input type="radio" name="soundtrack" id="soundtrackYes" value="yes"> Yes</label>
-          <label><input type="radio" name="soundtrack" id="soundtrackNo" value="no"> No</label>
-        </td>
-      </tr>
-
-    </table>
-
-    <div class="modalRow" style="justify-content:center; margin-top:14px; gap:12px;">
-      <button class="btn secondary" id="settingsCloseBtn" type="button">CLOSE</button>
-      <button class="btn defaultBtn" id="settingsSaveBtn" type="button">ACCEPT</button>
-    </div>
-  </div>
-</div>
 
 <!-- About (attribution) -->
 
-<div id="aboutModal" class="modalOverlay hidden" role="dialog" aria-modal="true" aria-label="About" style="display:none; pointer-events:none;">
-  <div class="modal" style="max-width:640px; width:92%; background:#ffffff; color:#111; border-radius:18px; padding:18px 18px 16px;">
-    <div class="modalTitle" style="color:#111;">About</div>
-    <pre id="aboutFlags" style="text-align:center;margin-bottom:12px;"></div>
 
-<div id="aboutText" style="white-space:pre-wrap; margin:10px 0 0; font-size:14px; line-height:1.35; color:#111;"></pre>
-    <div class="modalRow" style="justify-content:center; margin-top:14px; gap:12px;">
-      <button class="btn defaultBtn" id="aboutCloseBtn" type="button">CLOSE</button>
-    </div>
-  </div>
-</div>
-<div id="brokeModal" class="modalOverlay hidden" role="dialog" aria-modal="true" aria-label="Funds" style="display:none; pointer-events:none;">
-  <div class="modalCard">
-    <div class="modalTitle" id="fundsTitle">Insufficient Funds</div>
-    <div class="modalNote" id="fundsNote" style="font-size:18px;">You don't have enough bankroll.</div>
-
-    <div class="modalRow" id="fundsChoiceRow" style="justify-content:center; margin-top:16px; gap:12px;">
-      <button class="btn" id="addFundsBtn" type="button">ADD CHIPS</button>
-      <button class="btn secondary" id="continueHandBtn" type="button">CONTINUE HAND</button>
-      <button class="btn secondary" id="leaveTableBtn" type="button" style="display:none;">LEAVE TABLE</button>
-    </div>
-
-    <div id="fundsAddRow" class="modalRow" style="display:none; flex-direction:column; align-items:stretch; gap:10px; margin-top:12px;">
-      <div style="display:flex; align-items:center; gap:10px;">
-        <div style="font-weight:900; color:#f7e6b0; min-width:54px;">Add:</div>
-        <input id="fundsAmt" type="number" min="0.5" step="0.5" style="flex:1;" />
-      </div>
-      <div style="display:flex; gap:10px; justify-content:center;">
-        <button class="btn secondary" id="fundsCancelBtn" type="button">CANCEL</button>
-        <button class="btn" id="fundsConfirmBtn" type="button">CONFIRM</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-
-<div id="insuranceResultModal" class="modalOverlay hidden" role="dialog" aria-modal="true" aria-label="Insurance Result">
-  <div class="modalCard">
-    <div class="modalTitle" id="insuranceResultTitle">Insurance</div>
-    <div class="modalNote" id="insuranceResultText">Result</div>
-    <div class="modalRow" style="margin-top:16px;">
-      <button class="btn" id="insResultOkBtn" type="button">OK</button>
-    </div>
-  </div>
-</div>
 
 </body>
 </html>

@@ -273,3 +273,50 @@ v120B — 2026-01-23
 - Mobile/tablet: Added responsive UI scaling via --uiScale so cards/buttons fit iPad/iPhone landscape.
 - UX: Added portrait rotate overlay (landscape-only play).
 - Sound: Default soundtrack OFF (still available via Settings).
+
+
+v121C — 2026-01-24
+- Added a single uniform scale-down wrapper (transform: scale) so the entire game shrinks proportionally on small windows.
+- Baseline size is measured from the live v120B DOM at scale=1 (no hardcoded resolution); scaling is down-only and the layout at scale=1 is unchanged.
+- Centered the scaled game in the viewport; added an optional "Window too small" dim overlay at extreme small sizes.
+
+
+v122C — 2026-01-24
+- Refined uniform scale-down wrapper vertical centering: when scaled down, center the combined dealer+player+controls block (stage-local) instead of centering unused slack space.
+- Prevented the “growing gap” effect between the player lane and control panel as the window narrows.
+- Shoe/discard fill: measure usable height using unscaled layout dimensions (clientHeight/offsetHeight) so fill remains consistent under transform scaling.
+
+
+v123C — 2026-01-24
+- Responsive scaling: added anchor-based translateY when scale < 1, blending dealer-top and HUD-bottom anchors so extra vertical slack stays visually balanced (no pooling between player lane and controls).
+- Keeps v120B layout intact at scale=1; no component-level CSS changes.
+
+v124C — 2026-01-25
+- Responsive scaling fix: baseline stage height/width now measured using the true visual union of table + HUD (HUD temporarily participates in normal flow for measurement only).
+- Prevents HUD/control panel overlap with dealer/player lanes when the game is scaled down as a single transformed unit.
+
+v125 — 2026-01-25
+- Responsive scaling refinement: base stage height is measured from the v120B table (as intended), with only a minimal "safety reserve" added if needed to keep the HUD clear when converted to absolute during scale-down.
+- Vertical balancing now biases slightly toward the bottom anchor so the player lane stays closer to the control panel on tall viewports, reducing the perceived gap.
+
+v126C — 2026-01-25
+- Scaling architecture fix: stop transforming any ancestor of the fixed HUD/control panel (transform breaks position:fixed and causes overlaps).
+- New approach scales ONLY the playfield (dealer+player) via a dedicated wrapper and keeps the HUD truly fixed to the viewport.
+- Locks the player-bottom → controls-top gap to the baseline value across resizes (no growth on shrink) and prevents overlap by scaling down as needed (scale <= 1).
+
+
+v127C — 2026-01-25
+- Baseline measurement fix for playfield scaling: measure table/player geometry while the table is still in normal document flow, then move into the absolute transform wrapper.
+- Prevents the “narrow lane / collapsed playfield” issue caused by shrink-to-fit sizing after moving into an absolute container.
+- Keeps HUD/control panel fixed to viewport; playfield still scales down-only and maintains a constant player→controls gap across resizes.
+
+v128 — 2026-01-25
+- Control panel scaling: scale the control panel UI components (inside .controlsInner) at the same rate as the playfield/cards so the whole UI shrinks together on smaller viewports.
+- The control panel background/leather bar remain full-bleed edge-to-edge; only the inner UI scales.
+- Control panel padding and height are adjusted programmatically to match the shared scale factor (transform does not affect layout), preserving proportions and reducing crowding.
+
+v129C — 2026-01-25
+- Keep playfield + control panel shrinking together, but freeze the controls layout at its baseline width so HUD/buttons/icons never reflow or drop lines during resize.
+- Center the controls UI via translate+scale as a single unit; control panel container height is derived from content + padding to reduce excess “dead felt” at the bottom.
+- Restore leather rail visibility by keeping the control panel overflow visible (previous overflow clipping hid the ::after rail).
+- Pin CSS --uiScale at 1.0 so we don't double-scale internal lane/card geometry on resize; scaling is handled by the wrapper transforms.

@@ -129,11 +129,9 @@ function applyUIScale(){
     }
     document.body.classList.toggle('portrait', portrait);
 
-    // Scale UI down on smaller screens; keep desktop at 1.00.
-    // Baseline tuned for iPad landscape / laptop widths.
-    const minDim = Math.min(vw, vh);
-    let s = minDim / 900;                 // 900px "comfortable" baseline
-    s = Math.max(0.56, Math.min(1.00, s)); // clamp
+    // UI scale is driven by the playfield/controls transform system.
+// Keep CSS uiScale pinned at 1.0 so we don't "double scale" cards/lanes on resize.
+    const s = 1.0;
     document.documentElement.style.setProperty('--uiScale', String(Number(s).toFixed(3)));
   }catch(e){
     // no-op
@@ -475,7 +473,7 @@ function updateShoeDiscardIcons(){
 
   // Pixel mapping based on TOTAL so the icon doesn't wobble as it shrinks.
   const usable = shoeEl.querySelector('.usable') || shoeEl;
-  const usableH = Math.max(1, (usable.getBoundingClientRect && usable.getBoundingClientRect().height) ? usable.getBoundingClientRect().height : (usable.clientHeight || 1));
+  const usableH = Math.max(1, (usable.clientHeight || usable.offsetHeight || 1));
   const pxPerCard = total > 0 ? (usableH / total) : 0;
 
   // Shoe fill in px (fills from bottom).
@@ -3697,3 +3695,214 @@ function applySoundtrackVolume(vol){
     window.soundtrackAudio.volume = Math.max(0, Math.min(1, vol));
   }
 }
+
+
+/*** v126C: Scale ONLY the playfield (dealer+player), keep HUD fixed; lock the player→controls gap. ***/
+(function(){
+  function initPlayfieldScale(){
+    const stage = document.getElementById('gameStage');
+    const viewport = document.getElementById('gameViewport');
+    const controls = document.querySelector('.controls');
+    const controlsInner = controls ? controls.querySelector('.controlsInner') : null;
+    const table = stage ? stage.querySelector('.table') : null;
+    const playerArea = document.getElementById('playerArea');
+    if(!stage || !viewport || !controls || !controlsInner || !table || !playerArea) return;
+
+    // Create a dedicated wrapper we can transform without ever touching the fixed HUD.
+    // (Transforming an ancestor of a position:fixed element breaks viewport pinning.)
+    let wrap = document.getElementById('playfieldWrap');
+    // IMPORTANT: measure baselines while .table is still in normal flow (before moving into an absolute wrapper).
+    // If we move first, width:auto + shrink-to-fit rules can collapse the table and corrupt baseline geometry.
+    let needsMoveIntoWrap = !wrap;
+
+    function ensureWrap(){
+      if(wrap) return;
+      wrap = document.createElement('div');
+      wrap.id = 'playfieldWrap';
+      // Minimal inline layout: wrapper is the transform surface (never an ancestor of the fixed HUD).
+      wrap.style.position = 'absolute';
+      wrap.style.left = '0px';
+      wrap.style.top = '0px';
+      wrap.style.transformOrigin = 'top left';
+      wrap.style.willChange = 'transform';
+      wrap.style.pointerEvents = 'none';
+
+      // Insert wrapper before controls so z-order remains natural.
+      stage.insertBefore(wrap, controls);
+      wrap.appendChild(table);
+
+      // Allow playfield to receive input.
+      wrap.style.pointerEvents = 'auto';
+    }
+
+    // Baselines (measured at scale=1, no transforms)
+    let baseW = 0;
+    let basePlayerBottomLocal = 0;
+    let baseGap = 0; // player bottom → controls top
+    // Controls bar baseline (scale=1). We'll keep the background full-bleed, but scale the contents.
+    let baseControlsH = 0;
+    let baseControlsInnerW = 0;
+    let baseControlsInnerH = 0;
+    let baseControlsPadding = {t:0,r:0,b:0,l:0};
+    const MIN_GAP = 24; // px (prevents controls riding too high into player lane)
+    const LEATHER_H = 28; // matches .controls::after height
+
+    const tooSmall = document.getElementById('tooSmallOverlay');
+    const TOO_SMALL_SCALE = 0.55;
+
+    function measureBase(){
+      // Clear transforms to measure true v125/v120B geometry.
+      // (wrap may not exist yet on first measure — we intentionally measure before moving .table.)
+      if(wrap) wrap.style.transform = 'none';
+      if(controlsInner){
+        controlsInner.style.transform = 'none';
+        controlsInner.style.transformOrigin = 'top left';
+        controlsInner.style.willChange = 'transform';
+      }
+      // Reset any inline sizing from prior resizes.
+      controls.style.height = '';
+      controls.style.overflow = '';
+      controls.style.paddingTop = '';
+      controls.style.paddingRight = '';
+      controls.style.paddingBottom = '';
+      controls.style.paddingLeft = '';
+
+      const vw = (window.visualViewport && window.visualViewport.width)  ? window.visualViewport.width  : window.innerWidth;
+      // Ensure stage spans viewport; #gameStage already stretches via right/bottom in CSS.
+      // Compute base width from the table's natural size.
+      const tr = table.getBoundingClientRect();
+      baseW = Math.max(1, Math.round(tr.width));
+
+      // Player bottom local to table top.
+      const pr = playerArea.getBoundingClientRect();
+      basePlayerBottomLocal = Math.max(1, (pr.bottom - tr.top));
+
+      // Desired (constant) gap in viewport pixels.
+      const cr = controls.getBoundingClientRect();
+      baseGap = Math.max(0, Math.round(cr.top - pr.bottom));
+
+      // Baseline controls sizing (so we can scale controls content + container height in sync with playfield).
+      const cs = window.getComputedStyle(controls);
+      baseControlsPadding.t = parseFloat(cs.paddingTop) || 0;
+      baseControlsPadding.r = parseFloat(cs.paddingRight) || 0;
+      baseControlsPadding.b = parseFloat(cs.paddingBottom) || 0;
+      baseControlsPadding.l = parseFloat(cs.paddingLeft) || 0;
+
+      const ir = controlsInner.getBoundingClientRect();
+      baseControlsInnerW = Math.max(1, Math.round(ir.width));
+      baseControlsInnerH = Math.max(1, Math.round(ir.height));
+
+      // Use content-driven height (inner + paddings). This removes excess "dead felt" at the bottom.
+      // Note: leather rail is drawn with ::after and sits above controls (top:-LEATHER_H), so it should NOT
+      // contribute to the container's layout height.
+      baseControlsH = Math.max(1, Math.round(baseControlsInnerH + baseControlsPadding.t + baseControlsPadding.b));
+
+      // If something is wildly off (e.g. first paint), fall back to a sane gap.
+      if(!isFinite(baseGap) || baseGap < 0) baseGap = 16;
+      baseGap = Math.max(baseGap, MIN_GAP);
+
+      // If this is the first baseline measure, move the table into the transform wrapper now.
+      if(needsMoveIntoWrap){
+        ensureWrap();
+        needsMoveIntoWrap = false;
+      }
+      if(!wrap) return;
+
+      // Lock wrapper width so width-based scaling is stable.
+      wrap.style.width = baseW + 'px';
+    }
+
+    function applyScale(){
+      if(!baseW || !basePlayerBottomLocal || !baseControlsH) return;
+
+      const vw = (window.visualViewport && window.visualViewport.width)  ? window.visualViewport.width  : window.innerWidth;
+      const vh = (window.visualViewport && window.visualViewport.height) ? window.visualViewport.height : window.innerHeight;
+
+      // We want playfield AND controls to shrink at the same rate.
+      // Vertical fit constraint:
+      //   (playfield playerBottomLocal * s) + baseGap + (controls height * s) <= vh
+      // => s <= (vh - baseGap) / (basePlayerBottomLocal + baseControlsH)
+      const sW = vw / baseW;
+      const sH = (vh - baseGap) / (basePlayerBottomLocal + baseControlsH);
+      const s = Math.min(1, sW, sH);
+
+      // Apply the SAME scale factor to the controls content.
+      // Keep the controls background full-bleed, but scale the inner UI and shrink the panel height.
+      if(controlsInner){
+        // Freeze the inner layout at its baseline width so rows never reflow/wrap on narrow viewports.
+        // We then center + scale it as a single unit.
+        if(baseControlsInnerW){
+          controlsInner.style.width = baseControlsInnerW + 'px';
+          controlsInner.style.maxWidth = 'none';
+          controlsInner.style.margin = '0';
+        }
+        const txC = Math.max(0, (vw - (baseControlsInnerW * s)) / 2);
+        controlsInner.style.transform = `translate(${txC}px, 0px) scale(${s})`;
+        controlsInner.style.transformOrigin = 'top left';
+      }
+
+      // Scale paddings too so everything feels like it's shrinking together.
+      controls.style.paddingTop = (baseControlsPadding.t * s) + 'px';
+      controls.style.paddingRight = (baseControlsPadding.r * s) + 'px';
+      controls.style.paddingBottom = (baseControlsPadding.b * s) + 'px';
+      controls.style.paddingLeft = (baseControlsPadding.l * s) + 'px';
+
+      // Transform doesn't affect layout, so explicitly shrink the control panel height.
+      controls.style.height = (baseControlsH * s) + 'px';
+      // Keep overflow visible so the leather rail (::after) can render above the panel.
+      controls.style.overflow = 'visible';
+
+      // With scaled control panel height, compute its top edge (it is fixed to bottom:0).
+      const controlsTop = vh - (baseControlsH * s);
+
+      // Center horizontally.
+      const tx = Math.max(0, (vw - (baseW * s)) / 2);
+
+      // Lock the player→controls gap: place player bottom at (controlsTop - baseGap).
+      // playerBottomViewport = ty + (basePlayerBottomLocal * s)
+      // => ty = (controlsTop - baseGap) - (basePlayerBottomLocal * s)
+      let ty = (controlsTop - baseGap) - (basePlayerBottomLocal * s);
+      if(!isFinite(ty)) ty = 0;
+      // Never push the playfield above the top edge.
+      ty = Math.max(0, ty);
+
+      wrap.style.transform = `translate(${tx}px, ${ty}px) scale(${s})`;
+
+      if(tooSmall){
+        if(s < TOO_SMALL_SCALE) tooSmall.classList.remove('hidden');
+        else tooSmall.classList.add('hidden');
+      }
+    }
+
+    // Initial measure after layout settles.
+    requestAnimationFrame(()=>{
+      requestAnimationFrame(()=>{
+        measureBase();
+        applyScale();
+      });
+    });
+
+    // Re-measure when the HUD height changes (e.g., font load) or on first real resize.
+    let didBase = false;
+    function onResize(){
+      if(!didBase){
+        measureBase();
+        didBase = true;
+      }
+      applyScale();
+    }
+
+    window.addEventListener('resize', onResize);
+    window.addEventListener('orientationchange', onResize);
+    if(window.visualViewport){
+      window.visualViewport.addEventListener('resize', onResize);
+      window.visualViewport.addEventListener('scroll', onResize);
+    }
+  }
+
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', initPlayfieldScale);
+  } else {
+    initPlayfieldScale();
+  }
+})();
