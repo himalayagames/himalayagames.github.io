@@ -3308,6 +3308,14 @@ normalizeBet();
 function init(){
   applyUIScale();
 
+  // v130C: Visible build version in the About/Instructions panel.
+  try{
+    const versionEl = document.getElementById('versionText');
+    if(versionEl && typeof APP_VERSION !== 'undefined'){
+      versionEl.textContent = APP_VERSION;
+    }
+  }catch(_e){ /* non-fatal */ }
+
   initSoundtrack();
   startSoundtrack();
 
