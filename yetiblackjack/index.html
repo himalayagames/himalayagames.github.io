@@ -7,7 +7,7 @@
 <title>Yeti Blackjack</title>
 <script>
   // Single source of truth for the running build.
-  const APP_VERSION = "Yeti Blackjack v133C";
+  const APP_VERSION = "Yeti Blackjack v135C";
 </script>
 <!-- Libre Baskerville -->
 <link href="https://fonts.googleapis.com" rel="preconnect"/>
@@ -102,7 +102,10 @@ background-position: 0 0;
   color:#18A7FF !important;
 }
 
-/* v133C: Hide ONLY the numeric totals when Hide Hand Totals is set to NO (totals hidden).
+/* v133C: Keep labels ALL CAPS at all times */
+#dealerLabel, #playerLabel{ text-transform: uppercase; }
+
+/* v133C: Hide ONLY the numeric totals when "Hide Hand Totals" is YES (default).
    The PLAYER/DEALER labels always remain visible for clarity. */
 body.hideHandTotals #dealerValue,
 body.hideHandTotals #playerValue{
@@ -421,6 +424,9 @@ pointer-events:none;
   flex-wrap:wrap;
   align-items:center;
 }
+
+/* v135C: Keep DEAL clickable even when result popup overlay is visible */
+#dealBtn{ position: relative; z-index: 20100; }
 .btn{
   box-sizing: border-box;
   font-size:28px;
@@ -785,7 +791,8 @@ pointer-events:none;
 }
 
 .popupOverlay{
-  pointer-events:none;
+  /* v134C: allow clicks to dismiss the end-of-hand result popup */
+  pointer-events:auto;
   position:fixed;
   inset:0;
   display:flex;
@@ -797,7 +804,7 @@ pointer-events:none;
 }
 .popupOverlay.hidden{ display:none; }
 .popupCard{
-  pointer-events:none;
+  pointer-events:auto;
   background: rgba(0,0,0,.88);
   border: 3px solid rgba(215,180,90,.55);
   border-radius: 18px;

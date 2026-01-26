@@ -85,33 +85,39 @@ let RULE_HIT_SOFT_17 = true;     // false => S17, true => H17
 let RULE_SURRENDER = false;      // surrender toggle
 
 // v133C: Info-only display preference (can be changed anytime, even mid-hand)
-// Hide Hand Totals: YES => hide numeric totals during play (default)
-// Hide Hand Totals: NO  => show numeric totals during play
+// "Hide Hand Totals" setting:
+// - YES => totals are hidden during play (default)
+// - NO  => totals are shown during play
 // PLAYER/DEALER labels always remain visible.
-let HIDE_HAND_TOTALS = true; // default: YES => hidden
-function loadHideHandTotals(){
-  // Default on every fresh load: YES (hide totals). This is display-only and can be changed anytime.
-  HIDE_HAND_TOTALS = true;
+// Internally we store the inverse as SHOW_HAND_TOTALS for simpler rendering.
+let SHOW_HAND_TOTALS = false; // default: hidden (Hide Hand Totals = YES)
+// v134C: Reset default to YES (hidden totals) regardless of older saved prefs by using a new storage key.
+const SHOW_HAND_TOTALS_STORAGE_KEY = 'yetiShowHandTotals_v2';
+
+function loadShowHandTotals(){
   try{
-    // Force this default even if an older build left a different value in localStorage.
-    localStorage.setItem('yetiHideHandTotals', '1');
-    localStorage.setItem('yetiShowHandTotals', '0');
+    const ls = localStorage.getItem(SHOW_HAND_TOTALS_STORAGE_KEY);
+    if(ls !== null){
+      SHOW_HAND_TOTALS = (ls === '1');
+      return;
+    }
+    // First run on this version: keep default (hidden), and persist it.
+    SHOW_HAND_TOTALS = false;
+    localStorage.setItem(SHOW_HAND_TOTALS_STORAGE_KEY, '0');
   }catch(_e){ /* ignore */ }
 }
-
-function applyHideHandTotals(){
+function applyShowHandTotals(){
   try{
-    // CSS hook: when class is present, numeric totals are hidden.
-    document.body.classList.toggle('hideHandTotals', !!HIDE_HAND_TOTALS);
+    // Reuse CSS hook: when class is present, totals are hidden.
+    document.body.classList.toggle('hideHandTotals', !SHOW_HAND_TOTALS);
   }catch(_e){ /* ignore */ }
 }
-
-function setHideHandTotals(v){
-  HIDE_HAND_TOTALS = !!v;
-  try{ localStorage.setItem('yetiHideHandTotals', HIDE_HAND_TOTALS ? '1' : '0'); }catch(_e){ /* ignore */ }
-  // Also write legacy key for older builds (optional)
-  try{ localStorage.setItem('yetiShowHandTotals', HIDE_HAND_TOTALS ? '0' : '1'); }catch(_e){ /* ignore */ }
-  applyHideHandTotals();
+function setShowHandTotals(v){
+  SHOW_HAND_TOTALS = !!v;
+  try{ localStorage.setItem(SHOW_HAND_TOTALS_STORAGE_KEY, SHOW_HAND_TOTALS ? '1' : '0'); }catch(_e){ /* ignore */ }
+  // Also write old key for legacy reads (optional)
+  try{ localStorage.setItem('yetiHideHandTotals', SHOW_HAND_TOTALS ? '0' : '1'); }catch(_e){ /* ignore */ }
+  applyShowHandTotals();
 }
 
 
@@ -738,6 +744,28 @@ const popupText = document.getElementById("popupText");
 // v92B: Reinstate end-of-hand result popups (v91 disabled in-game messaging).
 const IN_GAME_MESSAGES = true;
 let _lastPopupShownAt = 0;
+
+// v134C: When an end-of-hand result popup appears, ensure no cards remain face-down.
+function revealAllCardsForResultPopup(){
+  try{
+    // If the dealer hole card is still hidden, force it up.
+    if(typeof holeDown !== 'undefined') holeDown = false;
+    // Ensure the UI is allowed to show the full dealer hand.
+    if(typeof dealerHand !== 'undefined' && Array.isArray(dealerHand)){
+      if(typeof dealerVisibleCount !== 'undefined') dealerVisibleCount = dealerHand.length;
+    }
+    if(typeof dealerTotalHold !== 'undefined') dealerTotalHold = false;
+    // Re-render so the visual state matches.
+    if(typeof renderHands === 'function') renderHands();
+    if(typeof updateLabels === 'function') updateLabels();
+  }catch(_e){ /* safety: never break the end-of-round flow */ }
+}
+
+function showResultPopup(msg){
+  revealAllCardsForResultPopup();
+  showPopup(msg);
+}
+
 function showPopup(msg){
   if(!IN_GAME_MESSAGES) return;
   const {overlay, text} = getPopupEls();
@@ -806,6 +834,27 @@ document.addEventListener('click', (e)=>{
   if(overlay.contains(e.target)){
     hidePopup();
   }
+});
+
+
+// v135C: Make DEAL the default action on Return/Enter (including when result popup is visible).
+document.addEventListener('keydown', (e)=>{
+  if(e.key !== 'Enter') return;
+
+  // Don't hijack Enter when typing in a form field.
+  const ae = document.activeElement;
+  if(ae){
+    const tag = (ae.tagName || '').toLowerCase();
+    if(tag === 'input' || tag === 'textarea' || tag === 'select') return;
+    if(ae.isContentEditable) return;
+  }
+
+  if(typeof dealBtn === 'undefined' || !dealBtn) return;
+  if(dealBtn.disabled) return;
+
+  // Prevent accidental double-trigger in some browsers.
+  e.preventDefault();
+  dealBtn.click();
 });
 
 /*** Money state ***/
@@ -1168,10 +1217,11 @@ function showSettingsModal(){
   }
 
   // v133C: Hide Hand Totals (info-only; can be changed anytime)
-  // YES => show totals; NO => hide totals
+  // YES => hide totals (SHOW_HAND_TOTALS = false)
+  // NO  => show totals (SHOW_HAND_TOTALS = true)
   if(hideTotalsYes && hideTotalsNo){
-    hideTotalsYes.checked = !!HIDE_HAND_TOTALS;
-    hideTotalsNo.checked  = !HIDE_HAND_TOTALS;
+    hideTotalsYes.checked = !SHOW_HAND_TOTALS;
+    hideTotalsNo.checked  = !!SHOW_HAND_TOTALS;
   }
   const rulesLocked = areTableRulesLocked();
 
@@ -1462,10 +1512,11 @@ const rulesLocked = areTableRulesLocked();
   }
 
   // v133C: Hide Hand Totals (apply even mid-hand)
-  // YES => show totals; NO => hide totals
+  // YES => hide totals (show = false)
+  // NO  => show totals (show = true)
   if(hideTotalsYes || hideTotalsNo){
-    const show = !!(hideTotalsYes && hideTotalsYes.checked);
-    setHideHandTotals(show);
+    const show = !!(hideTotalsNo && hideTotalsNo.checked);
+    setShowHandTotals(show);
   }
 
   // Decks (shoe size)
@@ -1911,7 +1962,7 @@ function updateLabels(){
 
 function roundTotalsBlock(){
   // Only show these lines when totals were hidden during play.
-  if(!HIDE_HAND_TOTALS) return '';
+  if(SHOW_HAND_TOTALS) return '';
   const d = totalDisplay(dealerHand || []);
   let p = '';
   if(Array.isArray(hands) && hands.length > 1){
@@ -2622,7 +2673,7 @@ async function settleDealerBlackjack(playerBJ){
 
   const delta = bankroll - roundStartBankroll;
   let label = (delta > 0) ? 'Win' : (delta < 0) ? 'Lose' : 'Push';
-  showPopup(`${label} $${Math.abs(delta)}`);
+  showResultPopup(`${label} $${Math.abs(delta)}`);
 
   inRound = false;
   updateHud();
@@ -2652,7 +2703,7 @@ async function settlePlayerBlackjack(){
   updateHud();
 
   const delta = bankroll - roundStartBankroll;
-  showPopup(`Blackjack! You win $${Math.abs(delta)}`);
+  showResultPopup(`Blackjack! You win $${Math.abs(delta)}`);
 
   inRound = false;
   updateHud();
@@ -2992,7 +3043,7 @@ async function dealerPlayAndSettle(){
     let totalLabel = (delta > 0) ? 'Total: Win' : (delta < 0) ? 'Total: Lose' : 'Total: Push';
     lines.push(`${totalLabel} $${Math.abs(delta)}`);
 
-    showPopup(lines.join('\n') + roundTotalsBlock());
+    showResultPopup(lines.join('\n') + roundTotalsBlock());
 
     inRound = false;
   updateHud();
@@ -3007,7 +3058,7 @@ async function dealerPlayAndSettle(){
   if(dv > 21 && delta > 0){
     // Dealer bust: show only this message (no generic Win popup)
     roundPopupOverride = { type: 'dealerBust', amount: Math.abs(delta) };
-    showPopup(`Dealer busts! Win $${Math.abs(delta)}` + roundTotalsBlock());
+    showResultPopup(`Dealer busts! Win $${Math.abs(delta)}` + roundTotalsBlock());
   }else if(
     roundPopupOverride &&
     roundPopupOverride.type === 'playerBust' &&
@@ -3027,7 +3078,7 @@ async function dealerPlayAndSettle(){
   }else{
     label = "Push";
   }
-  showPopup(`${label} $${Math.abs(delta)}` + roundTotalsBlock());
+  showResultPopup(`${label} $${Math.abs(delta)}` + roundTotalsBlock());
   }
 
   inRound = false;
@@ -3084,7 +3135,7 @@ async function onHit(){
     // Immediate bust popup for single-hand rounds (avoid duplicate end-of-round popups).
     if(hands.length === 1){
       roundPopupOverride = { type: 'playerBust', amount: Math.abs(w) };
-      showPopup(`Bust! Lose $${Math.abs(w)}`);
+      showResultPopup(`Bust! Lose $${Math.abs(w)}`);
     }
 
     finishHand();
@@ -3266,7 +3317,7 @@ async function onSurrender(){
   h.done = true;
   updateHud();
 
-  showPopup(`Surrender. Lose $${refund}`);
+  showResultPopup(`Surrender. Lose $${refund}`);
 
   inRound = false;
   updateHud();
@@ -3414,8 +3465,8 @@ function init(){
   // v133C: Load and apply the "Hide Hand Totals" preference early.
   // NOTE: In this build, the PLAYER/DEALER labels always remain visible;
   // the setting only controls whether numeric totals are shown.
-  loadHideHandTotals();
-  applyHideHandTotals();
+  loadShowHandTotals();
+  applyShowHandTotals();
 
   // v130C: Visible build version in the About/Instructions panel.
   try{

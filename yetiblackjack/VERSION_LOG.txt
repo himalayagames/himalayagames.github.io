@@ -343,3 +343,11 @@ v133C — 2026-01-25
 - UI: PLAYER/DEALER labels are always visible (so it’s always clear whose lane is whose).
 - UI: PLAYER/DEALER labels remain ALL CAPS at all times (including split labels like “PLAYER – HAND 2”).
 - Results popup: Dealer/Player totals lines appear only when totals were hidden during play.
+
+v134C — 2026-01-25
+- Results popup: When the hand resolves and the results popup appears, force any remaining face-down cards to flip face-up.
+- Results popup: Click anywhere on the popup to dismiss it.
+
+v135C — 2026-01-25
+- Results popup: DEAL button remains clickable while results popup is visible; clicking DEAL dismisses popup and deals immediately.
+- Controls: Pressing Return/Enter triggers DEAL (default action), including when results popup is visible.
