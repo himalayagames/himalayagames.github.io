@@ -320,3 +320,26 @@ v129C — 2026-01-25
 - Center the controls UI via translate+scale as a single unit; control panel container height is derived from content + padding to reduce excess “dead felt” at the bottom.
 - Restore leather rail visibility by keeping the control panel overflow visible (previous overflow clipping hid the ::after rail).
 - Pin CSS --uiScale at 1.0 so we don't double-scale internal lane/card geometry on resize; scaling is handled by the wrapper transforms.
+
+v130C — 2026-01-25
+- (baseline build for v131C)
+
+v131C — 2026-01-25
+- UI: Player/Dealer lane labels and hand totals are now bright blue.
+- Settings: Added “Hide Hand Totals (Yes/No)” directly under Bankroll (default Yes). This is info-only and can be toggled anytime, even mid-hand.
+- When Hide Hand Totals is Yes, lane labels/totals are hidden; when No, they are shown.
+- Results popup: when Hide Hand Totals is Yes, the popup includes “Dealer: …” and “Player: …” totals lines.
+- Logic: Player hand totals now update only after the newly dealt player card is flipped and visible (matching dealer behavior).
+
+v132C — 2026-01-25
+- FIX: Prevent a rare early-round crash that halted dealing after the first player card flip.
+  - Dealer visible-total calculation could run before any dealer cards existed, producing [undefined] and throwing.
+  - Totals/labels now safely ignore missing cards (and return an empty dealer total until the upcard exists).
+
+v133C — 2026-01-25
+- Settings: “Hide Hand Totals (Yes/No)” now behaves per the updated UX:
+  - Default is No (totals hidden during play).
+  - Yes shows the numeric hand totals; No hides the numeric hand totals.
+- UI: PLAYER/DEALER labels are always visible (so it’s always clear whose lane is whose).
+- UI: PLAYER/DEALER labels remain ALL CAPS at all times (including split labels like “PLAYER – HAND 2”).
+- Results popup: Dealer/Player totals lines appear only when totals were hidden during play.

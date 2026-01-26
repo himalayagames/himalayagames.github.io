@@ -7,7 +7,7 @@
 <title>Yeti Blackjack</title>
 <script>
   // Single source of truth for the running build.
-  const APP_VERSION = "Yeti Blackjack v130C";
+  const APP_VERSION = "Yeti Blackjack v133C";
 </script>
 <!-- Libre Baskerville -->
 <link href="https://fonts.googleapis.com" rel="preconnect"/>
@@ -95,6 +95,18 @@ background-position: 0 0;
   letter-spacing:0;
   font-weight:900;
   font-size:16px;
+}
+
+/* v131C: Bright blue lane labels + totals (when shown) */
+#dealerLabel, #playerLabel, #dealerValue, #playerValue{
+  color:#18A7FF !important;
+}
+
+/* v133C: Hide ONLY the numeric totals when Hide Hand Totals is set to NO (totals hidden).
+   The PLAYER/DEALER labels always remain visible for clarity. */
+body.hideHandTotals #dealerValue,
+body.hideHandTotals #playerValue{
+  visibility:hidden;
 }
 
 .lane{
@@ -1413,6 +1425,15 @@ border-bottom: 1px solid rgba(0,0,0,1.55);
 <input class="settingsInput" id="settingsBankroll" inputmode="numeric" pattern="[0-9]*" type="text"/>
 </td>
 </tr>
+
+<tr>
+<td class="settingsLabel">Hide Hand Totals</td>
+<td class="settingsRadios">
+<label><input id="hideTotalsYes" name="hideTotals" type="radio" value="yes"/>Yes</label>
+<label><input id="hideTotalsNo" name="hideTotals" type="radio" value="no"/>No</label>
+</td>
+</tr>
+
 <tr>
 <td class="settingsLabel">Number of Decks</td>
 <td>

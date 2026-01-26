@@ -84,6 +84,36 @@ let RULE_NUM_DECKS = 4;          // 2,4,6,8
 let RULE_HIT_SOFT_17 = true;     // false => S17, true => H17
 let RULE_SURRENDER = false;      // surrender toggle
 
+// v133C: Info-only display preference (can be changed anytime, even mid-hand)
+// Hide Hand Totals: YES => hide numeric totals during play (default)
+// Hide Hand Totals: NO  => show numeric totals during play
+// PLAYER/DEALER labels always remain visible.
+let HIDE_HAND_TOTALS = true; // default: YES => hidden
+function loadHideHandTotals(){
+  // Default on every fresh load: YES (hide totals). This is display-only and can be changed anytime.
+  HIDE_HAND_TOTALS = true;
+  try{
+    // Force this default even if an older build left a different value in localStorage.
+    localStorage.setItem('yetiHideHandTotals', '1');
+    localStorage.setItem('yetiShowHandTotals', '0');
+  }catch(_e){ /* ignore */ }
+}
+
+function applyHideHandTotals(){
+  try{
+    // CSS hook: when class is present, numeric totals are hidden.
+    document.body.classList.toggle('hideHandTotals', !!HIDE_HAND_TOTALS);
+  }catch(_e){ /* ignore */ }
+}
+
+function setHideHandTotals(v){
+  HIDE_HAND_TOTALS = !!v;
+  try{ localStorage.setItem('yetiHideHandTotals', HIDE_HAND_TOTALS ? '1' : '0'); }catch(_e){ /* ignore */ }
+  // Also write legacy key for older builds (optional)
+  try{ localStorage.setItem('yetiShowHandTotals', HIDE_HAND_TOTALS ? '0' : '1'); }catch(_e){ /* ignore */ }
+  applyHideHandTotals();
+}
+
 
 
 
@@ -1121,6 +1151,8 @@ function showSettingsModal(){
   if(!settingsModal) return;
 
   const settingsBankroll = getEl('settingsBankroll');
+  const hideTotalsYes = getEl('hideTotalsYes');
+  const hideTotalsNo  = getEl('hideTotalsNo');
   const settingsDecks = getEl('settingsDecks');
   const hitSoft17Yes = getEl('hitSoft17Yes');
   const hitSoft17No = getEl('hitSoft17No');
@@ -1133,6 +1165,13 @@ function showSettingsModal(){
   if(settingsBankroll){
     // Display as USD currency (input still accepts digits-only; we parse on save)
     settingsBankroll.value = formatUSD0(snapToNearest5(Math.round(bankroll)));
+  }
+
+  // v133C: Hide Hand Totals (info-only; can be changed anytime)
+  // YES => show totals; NO => hide totals
+  if(hideTotalsYes && hideTotalsNo){
+    hideTotalsYes.checked = !!HIDE_HAND_TOTALS;
+    hideTotalsNo.checked  = !HIDE_HAND_TOTALS;
   }
   const rulesLocked = areTableRulesLocked();
 
@@ -1402,6 +1441,8 @@ function triggerShuffleOverlay(){
 
 function applySettingsFromModal(){
   const settingsBankroll = getEl('settingsBankroll');
+  const hideTotalsYes = getEl('hideTotalsYes');
+  const hideTotalsNo  = getEl('hideTotalsNo');
   const settingsDecks = getEl('settingsDecks');
   const hitSoft17Yes = getEl('hitSoft17Yes');
   const staySoft17Yes = getEl('staySoft17Yes');
@@ -1418,6 +1459,13 @@ const rulesLocked = areTableRulesLocked();
     let n = d ? parseInt(d,10) : 0;
     n = snapToNearest5(n);
     bankroll = roundMoney(n);
+  }
+
+  // v133C: Hide Hand Totals (apply even mid-hand)
+  // YES => show totals; NO => hide totals
+  if(hideTotalsYes || hideTotalsNo){
+    const show = !!(hideTotalsYes && hideTotalsYes.checked);
+    setHideHandTotals(show);
   }
 
   // Decks (shoe size)
@@ -1566,6 +1614,10 @@ let holeDown = true;
 let dealerTotalHold = false;
 // Number of dealer cards whose positions/animations are complete (used to delay total updates)
 let dealerVisibleCount = 0;
+
+// v131C: keep player total frozen until the newly dealt card is flipped and visible
+let playerTotalHold = false;
+let playerVisibleCount = 0;
 
 // Split-hand model: array of hands, play one at a time
 let hands = []; // [{cards:[], isAceSplit:false, done:false, outcome:null}]
@@ -1790,6 +1842,9 @@ function totalDisplay(hand){
   if(!hand || !hand.length) return "";
   let low=0, aces=0;
   for(const c of hand){
+    // v132C FIX: guard against undefined placeholder entries
+    // (e.g., dealer upcard total requested before any dealer cards exist)
+    if(!c) continue;
     if(c.r === "A"){ aces++; low += 1; }
     else if(TEN_VALUE.has(c.r)) low += 10;
     else low += Number(c.r);
@@ -1812,6 +1867,27 @@ function visibleDealerCards(){
   return dealerHand;
 }
 
+function visiblePlayerCards(){
+  const ch = currentHand();
+  const cards = (ch && Array.isArray(ch.cards)) ? ch.cards : [];
+  if(!inRound) return cards;
+  if(playerTotalHold){
+    const n = Math.max(0, Math.min(cards.length, playerVisibleCount || 0));
+    return cards.slice(0, n);
+  }
+  return cards;
+}
+
+function beginPlayerTotalHold(visibleCount){
+  playerTotalHold = true;
+  playerVisibleCount = Math.max(0, Number(visibleCount) || 0);
+}
+function endPlayerTotalHold(){
+  playerTotalHold = false;
+  playerVisibleCount = 0;
+  updateLabels();
+}
+
 function currentHand(){
   return hands[activeHandIndex] || {cards:[]};
 }
@@ -1819,18 +1895,32 @@ function currentHand(){
 function updateLabels(){
   // Dealer
   const dv = totalDisplay(visibleDealerCards());
-  dealerLabel.textContent = "Dealer";
+  dealerLabel.textContent = "DEALER";
   dealerValue.textContent = dv;
 
   // Player label depends on split state
   const multi = hands.length > 1;
   if(multi){
-    playerLabel.textContent = `Player – Hand ${activeHandIndex+1}`;
+    playerLabel.textContent = `PLAYER – HAND ${activeHandIndex+1}`;
   }else{
-    playerLabel.textContent = "Player";
+    playerLabel.textContent = "PLAYER";
   }
-  const pv = totalDisplay(currentHand().cards || []);
+  const pv = totalDisplay(visiblePlayerCards());
   playerValue.textContent = pv;
+}
+
+function roundTotalsBlock(){
+  // Only show these lines when totals were hidden during play.
+  if(!HIDE_HAND_TOTALS) return '';
+  const d = totalDisplay(dealerHand || []);
+  let p = '';
+  if(Array.isArray(hands) && hands.length > 1){
+    p = hands.map(h=>totalDisplay((h && h.cards) ? h.cards : [])).join(' | ');
+  }else{
+    const h0 = (hands && hands[0]) ? hands[0] : {cards:[]};
+    p = totalDisplay(h0.cards || []);
+  }
+  return `\nDealer: ${d}\nPlayer: ${p}`;
 }
 
 function layoutLaneCards(laneEl){
@@ -2697,9 +2787,12 @@ async function startRound(){
   const p1 = draw();
   hands[0].cards.push(p1);
 
+  // v131C: Player total updates only after the new card is flipped/visible
+  beginPlayerTotalHold(hands[0].cards.length - 1);
   renderHands();
   dbgStep('startRound: renderHands() done');
   await animateLastDealtCard(playerLane, true);
+  endPlayerTotalHold();
   dbgStep('startRound: player card animated');
 
   // If we're running insurance tests, force the dealer upcard to an Ace.
@@ -2720,9 +2813,11 @@ async function startRound(){
   }
   hands[0].cards.push(p2);
 
+  beginPlayerTotalHold(hands[0].cards.length - 1);
   renderHands();
   dbgStep('startRound: renderHands() done');
   await animateLastDealtCard(playerLane, true);
+  endPlayerTotalHold();
   dbgStep('startRound: player card animated');
 
   // For insurance tests, force the dealer hole card:
@@ -2897,7 +2992,7 @@ async function dealerPlayAndSettle(){
     let totalLabel = (delta > 0) ? 'Total: Win' : (delta < 0) ? 'Total: Lose' : 'Total: Push';
     lines.push(`${totalLabel} $${Math.abs(delta)}`);
 
-    showPopup(lines.join('\n'));
+    showPopup(lines.join('\n') + roundTotalsBlock());
 
     inRound = false;
   updateHud();
@@ -2912,7 +3007,7 @@ async function dealerPlayAndSettle(){
   if(dv > 21 && delta > 0){
     // Dealer bust: show only this message (no generic Win popup)
     roundPopupOverride = { type: 'dealerBust', amount: Math.abs(delta) };
-    showPopup(`Dealer busts! Win $${Math.abs(delta)}`);
+    showPopup(`Dealer busts! Win $${Math.abs(delta)}` + roundTotalsBlock());
   }else if(
     roundPopupOverride &&
     roundPopupOverride.type === 'playerBust' &&
@@ -2932,7 +3027,7 @@ async function dealerPlayAndSettle(){
   }else{
     label = "Push";
   }
-  showPopup(`${label} $${Math.abs(delta)}`);
+  showPopup(`${label} $${Math.abs(delta)}` + roundTotalsBlock());
   }
 
   inRound = false;
@@ -2975,8 +3070,10 @@ async function onHit(){
   h.acted = true;
 
   h.cards.push(draw());
+  beginPlayerTotalHold(h.cards.length - 1);
   renderHands();
   await animateLastDealtCard(playerLane, true);
+  endPlayerTotalHold();
 
   if(handTotal(h.cards) > 21){
     // Bust
@@ -3035,8 +3132,10 @@ async function onDouble(){
   doubledThisHand = true;
 
   h.cards.push(draw());
+  beginPlayerTotalHold(h.cards.length - 1);
   renderHands();
   await animateLastDealtCard(playerLane, true);
+  endPlayerTotalHold();
 
   finishHand();
   setButtons();
@@ -3098,14 +3197,18 @@ async function onSplit(){
   // Animate the two split-deal cards by briefly rendering each hand.
   const baseIndex = activeHandIndex;
 
+  beginPlayerTotalHold(1);
   renderHands();
   await animateLastDealtCard(playerLane, true);
+  endPlayerTotalHold();
 
   // Flash to the second hand to show its dealt card, then return.
   if(hands.length > baseIndex + 1){
     activeHandIndex = baseIndex + 1;
+    beginPlayerTotalHold(1);
     renderHands();
     await animateLastDealtCard(playerLane, true);
+    endPlayerTotalHold();
   }
   activeHandIndex = baseIndex;
   renderHands();
@@ -3308,6 +3411,12 @@ normalizeBet();
 function init(){
   applyUIScale();
 
+  // v133C: Load and apply the "Hide Hand Totals" preference early.
+  // NOTE: In this build, the PLAYER/DEALER labels always remain visible;
+  // the setting only controls whether numeric totals are shown.
+  loadHideHandTotals();
+  applyHideHandTotals();
+
   // v130C: Visible build version in the About/Instructions panel.
   try{
     const versionEl = document.getElementById('versionText');
@@ -3509,7 +3618,7 @@ function wireDelegatedUI(){
 
     // Allow bankroll field + modal buttons.
     const id = t.id || '';
-    if(id === 'settingsBankroll' || id === 'settingsSaveBtn' || id === 'settingsCloseBtn') return;
+    if(id === 'settingsBankroll' || id === 'hideTotalsYes' || id === 'hideTotalsNo' || id === 'settingsSaveBtn' || id === 'settingsCloseBtn') return;
 
     // Decks select or locked rule radios within Settings.
     const lockedRuleIds = new Set([
