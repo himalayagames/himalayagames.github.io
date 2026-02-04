@@ -1,67 +1,30 @@
 
-/*** Utilities ***/
-const pause = (ms)=>new Promise(r=>setTimeout(r, ms));
+/*** Utilities (moved to core/utils.js in v143D) ***/
+const {
+  pause,
+  max0,
+  intMs,
+  nextFrame,
+  roundMoney,
+  fmtMoney,
+  clampToHalfDollar,
+  digitsOnly,
+  snapToNearest5,
+  formatUSD0
+} = (window.BJ && BJ.utils) ? BJ.utils : {};
 
-function max0(n){
-  n = Number(n);
-  return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
-}
-function intMs(seconds){
-  const s = Number(seconds);
-  if(!Number.isFinite(s)) return 0;
-  return Math.max(0, Math.round(s * 1000));
-}
-function nextFrame(){
-  return new Promise((r)=>requestAnimationFrame(()=>r()));
-}
+/*** Blackjack rule helpers (moved to core/rules_blackjack.js in v143D Step 4) ***/
+const {
+  cardValue,
+  isTenGroup,
+  handTotal,
+  handTotalDetailed,
+  isBlackjack,
+  canSplitPair
+} = (window.BJ && BJ.rulesBJ) ? BJ.rulesBJ : {};
 
-
-/*** Audio (local assets) ***/
-const DEAL_FLIP_SFX_SRC = 'sounds/deal_flip.wav';
-const RIFFLE_SFX_SRC    = 'sounds/riffle.mp3';
-
-let dealFlipSfxBase = null;
-let riffleSfxBase   = null;
-let dealFlipSfxDur  = 0.5; // seconds (will be replaced by loadedmetadata)
-let riffleSfxDur    = 0.7;
-
-function initAudio(){
-  // Deal/flip
-  dealFlipSfxBase = new Audio(DEAL_FLIP_SFX_SRC);
-  dealFlipSfxBase.preload = 'auto';
-  dealFlipSfxBase.addEventListener('loadedmetadata', ()=>{
-    if(Number.isFinite(dealFlipSfxBase.duration) && dealFlipSfxBase.duration > 0){
-      dealFlipSfxDur = dealFlipSfxBase.duration;
-    }
-  });
-
-  // Riffle
-  riffleSfxBase = new Audio(RIFFLE_SFX_SRC);
-  riffleSfxBase.preload = 'auto';
-  riffleSfxBase.addEventListener('loadedmetadata', ()=>{
-    if(Number.isFinite(riffleSfxBase.duration) && riffleSfxBase.duration > 0){
-      riffleSfxDur = riffleSfxBase.duration;
-    }
-  });
-}
-
-function playDealFlip(){
-  if(!GAME_SOUNDS_ON) return;
-  if(!dealFlipSfxBase) return;
-  const a = dealFlipSfxBase.cloneNode(true);
-  a.volume = 0.75;
-  a.currentTime = 0;
-  a.play().catch(()=>{});
-}
-
-function playRiffle(){
-  if(!GAME_SOUNDS_ON) return;
-  if(!riffleSfxBase) return;
-  const a = riffleSfxBase.cloneNode(true);
-  a.volume = 0.9;
-  a.currentTime = 0;
-  a.play().catch(()=>{});
-}
+/*** Audio ***/
+// Extracted to ui/desktop/desktop_audio.js (v152D cleanup)
 
 /**
  * DEV_TOOLS_ENABLED
@@ -69,6 +32,7 @@ function playRiffle(){
  * Dev/QA-only helper controls for forcing rare game states (insurance, splits).
  * Keep FALSE for production/shipping builds.
  */
+// v139C: Enable dev/test controls so Split testing is easy.
 const DEV_TOOLS_ENABLED = false;
 
 // Casino rule: allow at most 4 total hands after splitting.
@@ -106,6 +70,7 @@ function loadShowHandTotals(){
     localStorage.setItem(SHOW_HAND_TOTALS_STORAGE_KEY, '0');
   }catch(_e){ /* ignore */ }
 }
+
 function applyShowHandTotals(){
   try{
     // Reuse CSS hook: when class is present, totals are hidden.
@@ -124,18 +89,9 @@ function setShowHandTotals(v){
 
 
 /*** Deck ***/
-const SUITS = ["spades","hearts","diamonds","clubs"];
+// NOTE: Card drawing / shoe building has moved to core/shoe.js.
+// SUIT_CHAR is still used by the desktop renderer for pips/corners.
 const SUIT_CHAR = {spades:"♠", hearts:"♥", diamonds:"♦", clubs:"♣"};
-
-const RANKS = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
-const TEN_VALUE = new Set(["10","J","Q","K"]);
-
-function cardValue(c){
-  if(c.r === "A") return 11;
-  if(TEN_VALUE.has(c.r)) return 10;
-  return Number(c.r);
-}
-function isTenGroup(r){ return TEN_VALUE.has(r); }
 
 
 // -----------------
@@ -179,18 +135,14 @@ window.addEventListener('orientationchange', applyUIScale);
 // -----------------
 // Shoe state
 // -----------------
-let shoe = [];          // array of card objects + one cut marker object
-let shoePos = 0;        // next draw index
-let cutIndex = -1;      // index of cut marker within shoe (0-based)
-let discardPile = [];   // cards drawn this shoe, in order
 let shufflePending = false; // v94: set true when cut card is reached mid-hand; shuffle after hand completes
-let shoeId = 0;         // increments each shuffle (useful in debugging)
 
 // v86 Shoe-size guardrail:
 // - The number of decks (shoe size) may be changed ONLY before the first draw of a shoe.
 // - Once any card has been dealt/drawn (shoePos > 0), decks are locked until a shuffle/new shoe.
 function isShoeSizeLocked(){
-  return shoePos > 0;
+  const s = (BJ.shoe && BJ.shoe.getState) ? BJ.shoe.getState() : null;
+  return !!(s && typeof s.shoePos === 'number' && s.shoePos > 0);
 }
 
 // v88 Table-rule guardrail:
@@ -200,96 +152,71 @@ function areTableRulesLocked(){
   return isShoeSizeLocked();
 }
 
-function shuffleInPlace(arr){
-  for(let i=arr.length-1;i>0;i--){
-    const j=Math.floor(Math.random()*(i+1));
-    [arr[i],arr[j]]=[arr[j],arr[i]];
-  }
-  return arr;
-}
+// v157: Cut card policy (random vs deterministic penetration)
+const CUT_RANDOM_STORAGE_KEY = 'yetiRandomCutCard';
+const CUT_PEN_STORAGE_KEY    = 'yetiDeckPenetration';
 
-function buildRawCards(decks){
-  const cards=[];
-  for(let d=0; d<decks; d++){
-    for(const s of SUITS){
-      for(const r of RANKS){
-        cards.push({s,r});
-      }
+// Defaults per v157 spec:
+// - Random cut card: NO
+// - Manual penetration: 75%
+let CUT_RANDOM_CUT_CARD = false;
+let CUT_PENETRATION_PERCENT = 75;
+
+function loadCutPolicyFromStorage(){
+  try{
+    const rc = localStorage.getItem(CUT_RANDOM_STORAGE_KEY);
+    if(rc === '1' || rc === '0') CUT_RANDOM_CUT_CARD = (rc === '1');
+  }catch(_e){ /* ignore */ }
+  try{
+    const p = localStorage.getItem(CUT_PEN_STORAGE_KEY);
+    const n = p != null ? parseInt(String(p), 10) : NaN;
+    if(Number.isFinite(n)){
+      // clamp + snap
+      let v = Math.max(65, Math.min(90, n));
+      v = Math.round(v / 5) * 5;
+      v = Math.max(65, Math.min(90, v));
+      CUT_PENETRATION_PERCENT = v;
     }
-  }
-  return cards;
-}
+  }catch(_e){ /* ignore */ }
 
-function validateFullShoe(cardsOnly, decks){
-  const issues = [];
-  const expectedTotal = 52 * decks;
-  if(cardsOnly.length !== expectedTotal){
-    issues.push(`Total cards ${cardsOnly.length} != expected ${expectedTotal}`);
-  }
-
-  const counts = new Map();
-  for(const c of cardsOnly){
-    if(!c || !c.s || !c.r){ issues.push('Encountered invalid card object'); continue; }
-    if(!SUIT_CHAR[c.s]) issues.push(`Unknown suit: ${c.s}`);
-    if(!RANKS.includes(c.r)) issues.push(`Unknown rank: ${c.r}`);
-    const key = c.s + '|' + c.r;
-    counts.set(key, (counts.get(key) || 0) + 1);
-  }
-
-  if(counts.size !== 52) issues.push(`Distinct suit/rank combos ${counts.size} != 52`);
-  for(const s of SUITS){
-    for(const r of RANKS){
-      const key = s + '|' + r;
-      const n = counts.get(key) || 0;
-      if(n !== decks) issues.push(`Count for ${r}${SUIT_CHAR[s]} = ${n} (expected ${decks})`);
+  // Push into the core shoe module (owned boundary).
+  try{
+    if(BJ && BJ.shoe && typeof BJ.shoe.setCutPolicy === 'function'){
+      BJ.shoe.setCutPolicy({
+        randomCutCard: CUT_RANDOM_CUT_CARD,
+        penetrationPercent: CUT_PENETRATION_PERCENT
+      });
     }
-  }
-
-  return { ok: issues.length === 0, issues };
+  }catch(_e){ /* ignore */ }
 }
 
-function placeCutMarker(arrCardsOnly){
-  // Place cut between 70% and 80% penetration (0-based index into card list).
-  const total = arrCardsOnly.length;
-  const minPos = Math.floor(total * 0.70);
-  const maxPos = Math.floor(total * 0.80);
-  const pos = minPos + Math.floor(Math.random() * (maxPos - minPos + 1));
-  arrCardsOnly.splice(pos, 0, {cut:true});
-  return pos;
+function saveCutPolicyToStorage(){
+  try{ localStorage.setItem(CUT_RANDOM_STORAGE_KEY, CUT_RANDOM_CUT_CARD ? '1' : '0'); }catch(_e){ }
+  try{ localStorage.setItem(CUT_PEN_STORAGE_KEY, String(CUT_PENETRATION_PERCENT)); }catch(_e){ }
 }
+
+
+/*** Shoe / deck logic extracted to core/shoe.js (v143D Step 3)
+ *  ----------------------------------------------------------------
+ *  IMPORTANT:
+ *  - BJ.shoe is the source of truth for shoe state.
+ *  - core/shoe.js is DOM-free (no overlays, no deck viewer updates, no icon updates).
+ *  - This file keeps thin wrappers with the old function names so the rest of v142C UI code
+ *    remains unchanged during the refactor.
+ */
 
 function newShuffledShoe(decks){
-  const cards = buildRawCards(decks);
-  const audit = validateFullShoe(cards, decks);
-  if(!audit.ok){
-    console.error('Shoe validation FAILED:', audit.issues);
-  }
-
-  shuffleInPlace(cards);
-  cutIndex = placeCutMarker(cards);
-
-  shoe = cards;
-  shoePos = 0;
-  discardPile = [];
-  shoeId++;
-
+  BJ.shoe.newShuffledShoe(decks);
+  // UI reactions (DEV viewer + icons) remain in the UI layer for now.
   updateDeckViewer();
   updateShoeDiscardIcons();
 }
 
-function shoeTotalCards(){ return 52 * RULE_NUM_DECKS; } // excludes cut marker
-function shoeArrayLength(){ return shoe.length; }        // includes cut marker
-function cardsRemaining(){
-  let rem = shoe.length - shoePos;
-  if(cutIndex >= shoePos) rem -= 1; // cut marker still ahead in remaining segment
-  return Math.max(0, rem);
-}
-function discardCount(){ return discardPile.length; }
-function cardsUntilCut(){
-  if(cutIndex < 0) return null;
-  if(cutIndex < shoePos) return 0;
-  return cutIndex - shoePos;
-}
+function shoeTotalCards(){ return BJ.shoe.shoeTotalCards(); } // excludes cut marker
+function shoeArrayLength(){ return BJ.shoe.shoeArrayLength(); } // includes cut marker
+function cardsRemaining(){ return BJ.shoe.cardsRemaining(); }
+function discardCount(){ return BJ.shoe.discardCount(); }
+function cardsUntilCut(){ return BJ.shoe.cardsUntilCut(); }
 
 function cardToText(c){
   if(!c) return '?';
@@ -297,98 +224,45 @@ function cardToText(c){
   return `${c.r}${SUIT_CHAR[c.s] || ''}`;
 }
 
-function adjustCutIndexAfterSplice(spliceIndex){
-  if(cutIndex >= 0 && spliceIndex < cutIndex) cutIndex -= 1;
-}
-
 function draw(){
-  // Auto-reshuffle when cut card is reached.
-  if(!shoe || shoe.length === 0){
-    newShuffledShoe(RULE_NUM_DECKS);
-  }
-  if(shoePos >= shoe.length){
-    newShuffledShoe(RULE_NUM_DECKS);
+  const res = BJ.shoe.draw({ decks: RULE_NUM_DECKS, inRound: !!inRound });
+
+  // Mirror the legacy global used by UI/round flow.
+  if(res && res.shufflePending === true) shufflePending = true;
+
+  // If the shoe module performed an immediate reshuffle (only allowed when NOT inRound),
+  // preserve the legacy visual behavior.
+  if(res && res.shuffledNow){
+    triggerShuffleOverlay();
   }
 
-  // v94: If the cut card is reached during an active hand, finish the hand first,
-  // then shuffle before the next deal (more realistic casino behavior).
-  if(shoe[shoePos] && shoe[shoePos].cut){
-    shoePos++; // consume the cut marker
-    if(inRound){
-      shufflePending = true;
-      // Do NOT shuffle immediately; continue drawing from the remaining cards.
-    }else{
-      newShuffledShoe(RULE_NUM_DECKS);
-      triggerShuffleOverlay();
-    }
-  }
-
-  if(shoePos >= shoe.length){
-    newShuffledShoe(RULE_NUM_DECKS);
-  }
-
-  const c = shoe[shoePos++];
-  discardPile.push(c);
   updateDeckViewer();
   updateShoeDiscardIcons();
-  return c;
+  return res.card;
 }
 
-
-function drawSpecific(target, _secondTry=false){
-  // Pull a specific card from the remaining shoe to preserve deck integrity.
-  if(!target || !target.s || !target.r){
-    return draw();
-  }
-
-  for(let i=shoePos;i<shoe.length;i++){
-    const c = shoe[i];
-    if(c && !c.cut && c.s === target.s && c.r === target.r){
-      const [picked] = shoe.splice(i,1);
-      adjustCutIndexAfterSplice(i);
-      discardPile.push(picked);
-      updateDeckViewer();
+function drawSpecific(target){
+  const res = BJ.shoe.drawSpecific({ decks: RULE_NUM_DECKS, target, inRound: !!inRound });
+  if(res && res.shufflePending === true) shufflePending = true;
+  if(res && res.shuffledNow) triggerShuffleOverlay();
+  updateDeckViewer();
   updateShoeDiscardIcons();
-      return picked;
-    }
-  }
-
-  if(_secondTry){
-    console.warn('drawSpecific: card not found in shoe; falling back to draw()', target);
-    return draw();
-  }
-
-  newShuffledShoe(RULE_NUM_DECKS);
-  return drawSpecific(target, true);
+  return res.card;
 }
 
-function drawMatching(firstCard, _secondTry=false){
-  const wantTen = isTenGroup(firstCard.r);
-  for(let i=shoePos;i<shoe.length;i++){
-    const c = shoe[i];
-    if(!c || c.cut) continue;
-    const ok = wantTen ? isTenGroup(c.r) : (c.r === firstCard.r);
-    if(ok){
-      const [picked] = shoe.splice(i,1);
-      adjustCutIndexAfterSplice(i);
-      discardPile.push(picked);
-      updateDeckViewer();
+function drawMatching(firstCard){
+  const res = BJ.shoe.drawMatching({ decks: RULE_NUM_DECKS, firstCard, inRound: !!inRound });
+  if(res && res.shufflePending === true) shufflePending = true;
+  if(res && res.shuffledNow) triggerShuffleOverlay();
+  updateDeckViewer();
   updateShoeDiscardIcons();
-      return picked;
-    }
-  }
-
-  if(_secondTry){
-    console.warn('drawMatching: no match found after reshuffle; falling back to draw()');
-    return draw();
-  }
-
-  newShuffledShoe(RULE_NUM_DECKS);
-  return drawMatching(firstCard, true);
+  return res.card;
 }
 
-// Initialize first shoe
+// Initialize first shoe (delegated to BJ.shoe)
+loadCutPolicyFromStorage();
 newShuffledShoe(RULE_NUM_DECKS);
+
 
 // -----------------
 // Deck viewer (dev only)
@@ -399,41 +273,43 @@ let _deckWin = null;
 var _deckViewerOn = false;
 
 function buildDeckViewerText(){
-  const total = shoeTotalCards();
-  const rem = cardsRemaining();
-  const disc = discardCount();
-  const untilCut = cardsUntilCut();
+  const s = (BJ.shoe && BJ.shoe.getState) ? BJ.shoe.getState() : {
+    shoe: [],
+    discardPile: [],
+    shoePos: 0,
+    cutIndex: -1,
+    shoeId: 0,
+    totalCards: 52 * RULE_NUM_DECKS,
+    shoeArrayLength: 0,
+    cardsRemaining: 0,
+    discardCount: 0,
+    cardsUntilCut: null
+  };
 
   const lines = [];
   lines.push('Yeti Blackjack — Deck Viewer');
   lines.push('');
-  lines.push(`Shoe ID: ${shoeId}`);
+  lines.push(`Shoe ID: ${s.shoeId}`);
   lines.push(`Decks: ${RULE_NUM_DECKS}`);
-  lines.push(`Total cards (no cut): ${total}`);
-  lines.push(`Shoe array length (with cut marker): ${shoeArrayLength()}`);
-  lines.push(`Draw position (shoePos): ${shoePos}`);
-  lines.push(`Cut marker index (cutIndex): ${cutIndex}`);
-  lines.push(`Cards until cut: ${untilCut}`);
-  lines.push(`Cards remaining: ${rem}`);
-  lines.push(`Discard count: ${disc}`);
+  lines.push(`Total cards (no cut): ${s.totalCards}`);
+  lines.push(`Shoe array length (with cut marker): ${s.shoeArrayLength}`);
+  lines.push(`Draw position (shoePos): ${s.shoePos}`);
+  lines.push(`Cut marker index (cutIndex): ${s.cutIndex}`);
+  lines.push(`Cards until cut: ${s.cardsUntilCut}`);
+  lines.push(`Cards remaining: ${s.cardsRemaining}`);
+  lines.push(`Discard count: ${s.discardCount}`);
   lines.push('');
 
   lines.push('--- SHOE (remaining, in draw order) ---');
   let n=0;
-  for(let i=shoePos;i<shoe.length;i++){
-    const c = shoe[i];
-    if(c && c.cut){
-      lines.push('---- [CUT CARD] ----');
-      continue;
-    }
-    n += 1;
-    lines.push(String(n).padStart(4,' ') + '. ' + cardToText(c));
+  for(let i=s.shoePos;i<(s.shoe||[]).length;i++){
+    const c = s.shoe[i];
+    lines.push(String(++n).padStart(4,' ') + '. ' + cardToText(c));
   }
-
   lines.push('');
   lines.push('--- DISCARD (in draw order) ---');
-  for(let i=0;i<discardPile.length;i++){
-    lines.push(String(i+1).padStart(4,' ') + '. ' + cardToText(discardPile[i]));
+  for(let i=0;i<(s.discardPile||[]).length;i++){
+    lines.push(String(i+1).padStart(4,' ') + '. ' + cardToText(s.discardPile[i]));
   }
 
   return lines.join('\n');
@@ -498,14 +374,12 @@ function updateShoeDiscardIcons(){
   const discEl = getEl('discardIcon');
   if(!shoeEl || !discEl) return;
 
-  // Total cards in the current shoe (exclude cut marker object if present)
-  const total = (shoe && shoe.length) ? shoe.filter(x => !x.cut).length : (52 * RULE_NUM_DECKS);
+  const shoeState = BJ.shoe.getState ? BJ.shoe.getState() : null;
+  const total = shoeState ? shoeState.totalCards : (52 * RULE_NUM_DECKS);
+  const drawn = shoeState ? shoeState.discardCount : 0;
+  const remaining = shoeState ? shoeState.cardsRemaining : Math.max(0, total - drawn);
+  const cutIdx = shoeState ? shoeState.cutIndex : -1;
 
-  // Cards dealt so far in this shoe: use discard pile (cards only) so the counter advances exactly once per dealt card.
-  const drawn = (discardPile && Array.isArray(discardPile)) ? discardPile.length :
-                ((typeof shoePos === 'number') ? shoePos : 0);
-
-  const remaining = Math.max(0, total - drawn);
 
   // Pixel mapping based on TOTAL so the icon doesn't wobble as it shrinks.
   const usable = shoeEl.querySelector('.usable') || shoeEl;
@@ -524,8 +398,8 @@ function updateShoeDiscardIcons(){
   //   cardsAboveCut = total - cutIndex
   // As we deal from the bottom, remaining shrinks, and the cut marker moves toward the bottom at the same rate.
   let cutPxFromBottom = 0;
-  if(typeof cutIndex === 'number' && cutIndex >= 0 && total > 0){
-    const cardsAboveCut = Math.max(0, total - cutIndex);     // invariant distance to top
+  if(typeof cutIdx === 'number' && cutIdx >= 0 && total > 0){
+    const cardsAboveCut = Math.max(0, total - cutIdx);     // invariant distance to top
     const cutFromBottom = remaining - cardsAboveCut;         // 0 => cut at the deal mouth (shuffle trigger)
     cutPxFromBottom = cutFromBottom * pxPerCard;
   }else{
@@ -555,50 +429,18 @@ function toggleDeckViewer(){
 }
 
 function deckDebugSnapshot(){
+  const s = (BJ.shoe && BJ.shoe.getState) ? BJ.shoe.getState() : {};
   return {
     decks: RULE_NUM_DECKS,
-    totalCards: shoeTotalCards(),
-    cardsRemaining: cardsRemaining(),
-    discardCount: discardCount(),
-    cutIndex,
-    cardsUntilCut: cardsUntilCut(),
-    shoePos,
-    shoeId
+    totalCards: s.totalCards ?? (52 * RULE_NUM_DECKS),
+    cardsRemaining: s.cardsRemaining ?? 0,
+    discardCount: s.discardCount ?? 0,
+    cutIndex: s.cutIndex ?? -1,
+    cardsUntilCut: s.cardsUntilCut ?? null,
+    shoePos: s.shoePos ?? 0,
+    shoeId: s.shoeId ?? 0
   };
 }
-
-function handTotal(hand){  let total=0, aces=0;
-  for(const c of hand){
-    if(c.r==="A"){ aces++; total+=11; }
-    else if(TEN_VALUE.has(c.r)) total+=10;
-    else total+=Number(c.r);
-  }
-  while(total>21 && aces){ total-=10; aces--; }
-  return total;
-}
-
-function handTotalDetailed(hand){
-  let total=0, aces=0;
-  for(const c of hand){
-    if(c.r==="A"){ aces++; total+=11; }
-    else if(TEN_VALUE.has(c.r)) total+=10;
-    else total+=Number(c.r);
-  }
-  // Reduce aces from 11->1 as needed
-  let reduced = 0;
-  while(total>21 && aces){ total-=10; aces--; reduced++; }
-  const soft = (reduced === 0) && hand.some(c=>c.r==="A") && total<=21;
-  return {total, soft};
-}
-
-function isBlackjack(cards, fromSplit=false){
-  if(fromSplit) return false;
-  if(!cards || cards.length !== 2) return false;
-  const a = cards[0], b = cards[1];
-  const av = cardValue(a), bv = cardValue(b);
-  return (av + bv) === 21;
-}
-
 
 /*** UI refs ***/
 const dealerArea = document.getElementById("dealerArea");
@@ -643,6 +485,7 @@ const surrenderBtn = document.getElementById("surrenderBtn");
 const gearBtn = document.getElementById("gearBtn");
 const helpBtn = document.getElementById("helpBtn");
 const devToolsRow = document.getElementById("devToolsRow");
+const devBadge = document.getElementById("devBadge");
 const testSplitsBtn = document.getElementById("testSplitsBtn");
 const testInsBJBtn = document.getElementById("testInsBJBtn");
 const testInsNoBJBtn = document.getElementById("testInsNoBJBtn");
@@ -732,68 +575,9 @@ const betDown = document.getElementById("betDown");
 const betUp = document.getElementById("betUp");
 const bankrollBox = document.getElementById("bankrollBox");
 
-function getPopupEls(){
-  return {
-    overlay: document.getElementById("resultPopup"),
-    text: document.getElementById("popupText")
-  };
-}
-/*** Result popup ***/
-const resultPopup = document.getElementById("resultPopup");
-const popupText = document.getElementById("popupText");
-// v92B: Reinstate end-of-hand result popups (v91 disabled in-game messaging).
-const IN_GAME_MESSAGES = true;
-let _lastPopupShownAt = 0;
+// Result popup helpers extracted to ui/desktop/desktop_modals.js (v152D cleanup)
 
-// v134C: When an end-of-hand result popup appears, ensure no cards remain face-down.
-function revealAllCardsForResultPopup(){
-  try{
-    // If the dealer hole card is still hidden, force it up.
-    if(typeof holeDown !== 'undefined') holeDown = false;
-    // Ensure the UI is allowed to show the full dealer hand.
-    if(typeof dealerHand !== 'undefined' && Array.isArray(dealerHand)){
-      if(typeof dealerVisibleCount !== 'undefined') dealerVisibleCount = dealerHand.length;
-    }
-    if(typeof dealerTotalHold !== 'undefined') dealerTotalHold = false;
-    // Re-render so the visual state matches.
-    if(typeof renderHands === 'function') renderHands();
-    if(typeof updateLabels === 'function') updateLabels();
-  }catch(_e){ /* safety: never break the end-of-round flow */ }
-}
-
-function showResultPopup(msg){
-  revealAllCardsForResultPopup();
-  showPopup(msg);
-}
-
-function showPopup(msg){
-  if(!IN_GAME_MESSAGES) return;
-  const {overlay, text} = getPopupEls();
-  if(!overlay || !text) return;
-  text.textContent = msg;
-  overlay.classList.remove("hidden");
-  _lastPopupShownAt = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-
-  // Dim cards only (not bottom controls)
-  dealerArea.classList.add('dim');
-  playerArea.classList.add('dim');
-
-  // Ensure DEAL is visibly ready
-  if(typeof dealBtn !== "undefined" && dealBtn){
-    dealBtn.disabled = false;
-    dealBtn.classList.add("dealReady");
-  }
-}
-function hidePopup(){
-  const {overlay} = getPopupEls();
-  if(!overlay) return;
-  overlay.classList.add("hidden");
-  dealerArea.classList.remove('dim');
-  playerArea.classList.remove('dim');
-  if(typeof dealBtn !== "undefined" && dealBtn){
-    dealBtn.classList.remove("dealReady");
-  }
-}
+// Result popup helpers are implemented in ui/desktop/desktop_modals.js (v152D cleanup)
 
 /*** Game Over (Leave Table) ***/
 let gameOver = false;
@@ -823,39 +607,26 @@ function endGame(){
 // Dismiss popup when the user clicks the popup overlay (or its contents).
 // Guard: ignore the same click gesture that caused the popup to appear.
 document.addEventListener('click', (e)=>{
-  const {overlay} = getPopupEls();
+  const overlay = document.getElementById('resultPopup');
   if(!overlay) return;
   if(overlay.classList.contains('hidden')) return;
 
   const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-  if(now - _lastPopupShownAt < 250) return;
+  const lastShown = (window.BJ && BJ.desktopModals && typeof BJ.desktopModals.getLastPopupShownAt === 'function')
+    ? BJ.desktopModals.getLastPopupShownAt()
+    : 0;
+  if(now - lastShown < 250) return;
 
-  // Only dismiss if the click is on the overlay (or inside it), not on gameplay buttons.
-  if(overlay.contains(e.target)){
+  // v136C: Only dismiss when clicking *the popup card itself* (not the full-screen overlay).
+  // This prevents accidental dismissal when clicking outside the popup.
+  const card = overlay.querySelector('.popupCard');
+  if(card && card.contains(e.target)){
     hidePopup();
   }
 });
 
 
-// v135C: Make DEAL the default action on Return/Enter (including when result popup is visible).
-document.addEventListener('keydown', (e)=>{
-  if(e.key !== 'Enter') return;
-
-  // Don't hijack Enter when typing in a form field.
-  const ae = document.activeElement;
-  if(ae){
-    const tag = (ae.tagName || '').toLowerCase();
-    if(tag === 'input' || tag === 'textarea' || tag === 'select') return;
-    if(ae.isContentEditable) return;
-  }
-
-  if(typeof dealBtn === 'undefined' || !dealBtn) return;
-  if(dealBtn.disabled) return;
-
-  // Prevent accidental double-trigger in some browsers.
-  e.preventDefault();
-  dealBtn.click();
-});
+// v143D Step 6: Enter-to-Deal wiring moved to ui/desktop/desktop_ui.js
 
 /*** Money state ***/
 // Default bankroll for "Reload Bankroll".
@@ -866,6 +637,10 @@ let bet = 25.00;
 let roundStartBankroll = 500.00;
 let cycleToken = 0;
 
+
+// v158D: Canonical end-of-round finalizer gate.
+// We key off cycleToken (incremented at the start of each round) so finalize runs once per round.
+let _roundFinalizedToken = -1;
 // Sound toggle (UI may be added later). Keep resilient:
 // - respects window.SOUNDS_ENABLED / window.soundsEnabled
 // - respects localStorage key 'yetiSounds' ('1' / '0')
@@ -1129,30 +904,6 @@ function maybeShowFundsModalWhenBroke(){
 /***********************
  * Add Chips Modal + Settings Modal
  ***********************/
-function digitsOnly(str){
-  return String(str ?? '').replace(/[^0-9]/g,'');
-}
-function snapToNearest5(n){
-  n = Number(n);
-  if(!Number.isFinite(n)) return 0;
-  return Math.round(n/5)*5;
-}
-function formatUSD0(n){
-  // USD currency with 0 fraction digits (e.g. $1,250)
-  const v = Number(n);
-  const safe = Number.isFinite(v) ? v : 0;
-  try{
-    return new Intl.NumberFormat('en-US', {
-      style: 'currency',
-      currency: 'USD',
-      maximumFractionDigits: 0
-    }).format(safe);
-  }catch(_){
-    // Fallback if Intl isn't available
-    const rounded = Math.round(safe);
-    return '$' + String(rounded).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
-  }
-}
 function filterBankrollField(inputEl){
   if(!inputEl) return;
   // Allow free typing; strip non-digits only.
@@ -1203,6 +954,9 @@ function showSettingsModal(){
   const hideTotalsYes = getEl('hideTotalsYes');
   const hideTotalsNo  = getEl('hideTotalsNo');
   const settingsDecks = getEl('settingsDecks');
+  const randomCutYes = getEl('randomCutYes');
+  const randomCutNo  = getEl('randomCutNo');
+  const settingsPenetration = getEl('settingsPenetration');
   const hitSoft17Yes = getEl('hitSoft17Yes');
   const hitSoft17No = getEl('hitSoft17No');
   const staySoft17Yes = getEl('staySoft17Yes');
@@ -1235,6 +989,33 @@ function showSettingsModal(){
     settingsDecks.title = rulesLocked ? 'Table rules are locked until the next shuffle/new shoe.' : '';
     settingsDecks.dataset.prevDecks = String(RULE_NUM_DECKS);
   }
+  // v157: Cut card policy UI
+  const settingsPenLabel = getEl('settingsPenetrationLabel');
+  if(randomCutYes && randomCutNo){
+    randomCutYes.checked = !!CUT_RANDOM_CUT_CARD;
+    randomCutNo.checked  = !CUT_RANDOM_CUT_CARD;
+  }
+  if(settingsPenetration){
+    // Slider shows 75% and is disabled when random is ON.
+    const v = CUT_RANDOM_CUT_CARD ? 75 : CUT_PENETRATION_PERCENT;
+    settingsPenetration.value = String(v);
+    if(settingsPenLabel) settingsPenLabel.textContent = String(v) + '%';
+
+    const disableForRandom = !!CUT_RANDOM_CUT_CARD;
+    const disableForLock = !!rulesLocked;
+    settingsPenetration.disabled = disableForRandom || disableForLock;
+    settingsPenetration.setAttribute('aria-disabled', (disableForRandom || disableForLock) ? 'true' : 'false');
+  }
+
+  // Mark cut policy radios as locked visually when table rules are locked
+  try{
+    const td = randomCutYes?.closest?.('td');
+    if(td) td.classList.toggle('lockedRadios', rulesLocked);
+    [randomCutYes, randomCutNo].forEach(inp=>{
+      if(!inp) return;
+      inp.setAttribute('aria-disabled', rulesLocked ? 'true' : 'false');
+    });
+  }catch(_e){ }
 
   // soft17 rows (mutually exclusive)
   if(RULE_HIT_SOFT_17){
@@ -1366,9 +1147,19 @@ function hideHelpScroll(){
 
 let _shuffleOverlayActive = false;
 function playRiffleOnceAwaitEnd(){
+  // NOTE (v156): riffleSfxBase used to be a legacy global, but audio ownership
+  // moved into ui/desktop/desktop_audio.js. Accessing an undeclared identifier
+  // here can throw and wedge the shuffle overlay (UI stays locked).
+  // Create a fresh Audio instance for the riffle and always resolve.
   return new Promise((resolve)=>{
-    if(!riffleSfxBase){ resolve(); return; }
-    const a = riffleSfxBase.cloneNode(true);
+    // Respect the current SFX toggle.
+    try{
+      if(typeof GAME_SOUNDS_ON !== 'undefined' && !GAME_SOUNDS_ON){ resolve(); return; }
+    }catch(_e){ /* ignore */ }
+    if(typeof window.GAME_SOUNDS_ON !== 'undefined' && !window.GAME_SOUNDS_ON){ resolve(); return; }
+
+    const a = new Audio('sounds/riffle.mp3');
+    a.preload = 'auto';
     a.volume = 0.9;
     a.currentTime = 0;
 
@@ -1463,29 +1254,34 @@ function triggerShuffleOverlay(){
 
   // Cycle overlay while audio plays 3 times.
   (async ()=>{
-    // Start overlay cycle loop.
-    const cycleLoop = (async ()=>{
-      while(true){
-        await runShuffleOverlayCycle(overlay);
-        if(stopRequested) break;
-      }
-    })();
+    try{
+      // Start overlay cycle loop.
+      const cycleLoop = (async ()=>{
+        while(true){
+          await runShuffleOverlayCycle(overlay);
+          if(stopRequested) break;
+        }
+      })();
 
-    // Play riffle sound exactly 3 times.
-    await playRiffleThreeTimes();
-    stopRequested = true;
+      // Play riffle sound exactly 3 times.
+      await playRiffleThreeTimes();
+      stopRequested = true;
 
-    // Wait for overlay to finish its current cycle.
-    await cycleLoop;
-
-    // Hide overlay and unlock UI.
-    if(box){ box.style.opacity = '0'; }
-    overlay.classList.add('hidden');
-    overlay.style.display = 'none';
-    overlay.style.pointerEvents = 'none';
-    _shuffleOverlayActive = false;
-    uiLocked = false;
-    setButtons();
+      // Wait for overlay to finish its current cycle.
+      await cycleLoop;
+    }catch(err){
+      // If anything goes wrong, never leave the UI locked.
+      console.error('shuffle overlay failed', err);
+    }finally{
+      // Hide overlay and unlock UI.
+      if(box){ box.style.opacity = '0'; }
+      overlay.classList.add('hidden');
+      overlay.style.display = 'none';
+      overlay.style.pointerEvents = 'none';
+      _shuffleOverlayActive = false;
+      uiLocked = false;
+      setButtons();
+    }
   })();
 }
 
@@ -1494,6 +1290,9 @@ function applySettingsFromModal(){
   const hideTotalsYes = getEl('hideTotalsYes');
   const hideTotalsNo  = getEl('hideTotalsNo');
   const settingsDecks = getEl('settingsDecks');
+  const randomCutYes = getEl('randomCutYes');
+  const randomCutNo  = getEl('randomCutNo');
+  const settingsPenetration = getEl('settingsPenetration');
   const hitSoft17Yes = getEl('hitSoft17Yes');
   const staySoft17Yes = getEl('staySoft17Yes');
   const surrenderYes = getEl('surrenderYes');
@@ -1536,6 +1335,35 @@ const rulesLocked = areTableRulesLocked();
     }
   }
 
+  // v157: Cut card policy (table rule)
+  const prevRandomCut = !!CUT_RANDOM_CUT_CARD;
+  const prevPen = Number(CUT_PENETRATION_PERCENT) || 75;
+  let cutChanged = false;
+
+  if(!rulesLocked){
+    // Determine new policy from modal.
+    const wantRandom = !!(randomCutYes && randomCutYes.checked);
+    let wantPen = prevPen;
+    if(wantRandom){
+      wantPen = 75;
+    }else if(settingsPenetration){
+      const n = parseInt(String(settingsPenetration.value), 10);
+      if(Number.isFinite(n)) wantPen = n;
+    }
+    // Clamp + snap
+    wantPen = Math.max(65, Math.min(90, wantPen));
+    wantPen = Math.round(wantPen / 5) * 5;
+    wantPen = Math.max(65, Math.min(90, wantPen));
+
+    if(wantRandom !== prevRandomCut || wantPen !== prevPen){
+      CUT_RANDOM_CUT_CARD = wantRandom;
+      CUT_PENETRATION_PERCENT = wantPen;
+      cutChanged = true;
+      saveCutPolicyToStorage();
+      try{ BJ.shoe && typeof BJ.shoe.setCutPolicy === 'function' && BJ.shoe.setCutPolicy({ randomCutCard: CUT_RANDOM_CUT_CARD, penetrationPercent: CUT_PENETRATION_PERCENT }); }catch(_e){}
+    }
+  }
+
   // H17/S17 + Surrender are table rules; lock mid-shoe.
   if(!rulesLocked){
     // H17/S17 (mutually exclusive UI)
@@ -1557,7 +1385,7 @@ const rulesLocked = areTableRulesLocked();
     setSoundtrackOn(on);
   }
 // v86: Only rebuild the shoe when decks actually changed (and only when allowed).
-  if(decksChanged){
+  if(decksChanged || cutChanged){
     newShuffledShoe(RULE_NUM_DECKS);
   }
 
@@ -1646,13 +1474,11 @@ let insuranceBet = 0;   // dollars (can be in $0.50 increments)
 let insuranceMax = 0;   // dollars
 let insuranceResolve = null;
 let insuranceHandlersBound = false;
+// Step 7D3: When insurance is engine-owned, the modal resolves to a chosen amount
+// without directly mutating bankroll/insuranceBet. The engine applies the wager.
+let insuranceEngineMode = false;
+let insuranceEngineBetTemp = 0;
 
-function clampToHalfDollar(v){
-  // Keep to $0.50 increments, avoid floating drift
-  if(!Number.isFinite(v)) return 0;
-  // round DOWN to nearest 0.50
-  return Math.floor(v * 2) / 2;
-}
 
 // Round-level popup overrides to prevent duplicate outcome popups
 // Example: player bust shows an immediate popup; we suppress the generic end-of-round popup.
@@ -1855,8 +1681,6 @@ function clearHighlights(){
   playerArea.classList.remove("winGlow","dim");
 }
 
-function roundMoney(n){ return Math.round((Number(n) + Number.EPSILON) * 100) / 100; }
-function fmtMoney(n){ return `$${roundMoney(n).toFixed(2)}`; }
 
 function computeChipsInAction(){
   if(!inRound) return 0;
@@ -1891,20 +1715,11 @@ function updateHud(){
 
 function totalDisplay(hand){
   if(!hand || !hand.length) return "";
-  let low=0, aces=0;
-  for(const c of hand){
-    // v132C FIX: guard against undefined placeholder entries
-    // (e.g., dealer upcard total requested before any dealer cards exist)
-    if(!c) continue;
-    if(c.r === "A"){ aces++; low += 1; }
-    else if(TEN_VALUE.has(c.r)) low += 10;
-    else low += Number(c.r);
-  }
-  const high = (aces > 0) ? (low + 10) : null;
-  if(high !== null && high <= 21){
-    return `${low} / ${high}`;
-  }
-  return String(low);
+  // v140C: show only ONE total — the best playable total (highest <= 21).
+  // (No more "low / high" soft-hand display.)
+  const clean = hand.filter(Boolean);
+  if(!clean.length) return "";
+  return String(handTotal(clean));
 }
 
 function visibleDealerCards(){
@@ -2541,11 +2356,25 @@ function bindInsuranceHandlers(){
   function resolveInsurance(){
     const r = insuranceResolve;
     insuranceResolve = null;
-    if(typeof r === 'function') r();
+    if(typeof r === 'function'){
+      // In engine-mode, resolve with the chosen bet amount.
+      if(insuranceEngineMode){
+        const amt = insuranceEngineBetTemp;
+        insuranceEngineBetTemp = 0;
+        insuranceEngineMode = false;
+        r(amt);
+      }else{
+        r();
+      }
+    }
   }
 
   insNoBtn.onclick = () => {
-    insuranceBet = 0;
+    if(insuranceEngineMode){
+      insuranceEngineBetTemp = 0;
+    }else{
+      insuranceBet = 0;
+    }
     // Reset UI state
     insuranceChoiceRow.style.display = '';
     insuranceBetRow.style.display = 'none';
@@ -2555,7 +2384,11 @@ function bindInsuranceHandlers(){
   };
 
   insCancelBtn.onclick = () => {
-    insuranceBet = 0;
+    if(insuranceEngineMode){
+      insuranceEngineBetTemp = 0;
+    }else{
+      insuranceBet = 0;
+    }
     // Cancel means: no insurance bet placed, resume play immediately
     insuranceChoiceRow.style.display = '';
     insuranceBetRow.style.display = 'none';
@@ -2576,9 +2409,14 @@ function bindInsuranceHandlers(){
     // Avoid floating drift
     v = roundMoney(v);
 
-    insuranceBet = v;
-    bankroll = Math.max(0, roundMoney(bankroll - insuranceBet));
-    updateHud();
+    if(insuranceEngineMode){
+      // Engine will apply bankroll changes; we only return the chosen amount.
+      insuranceEngineBetTemp = v;
+    }else{
+      insuranceBet = v;
+      bankroll = Math.max(0, roundMoney(bankroll - insuranceBet));
+      updateHud();
+    }
 
     hideInsuranceModal();
     resolveInsurance();
@@ -2587,6 +2425,18 @@ function bindInsuranceHandlers(){
 
 function awaitInsurance(maxBet){
   return new Promise((resolve)=>{
+    insuranceResolve = resolve;
+    showInsuranceModal(maxBet);
+  });
+}
+
+// Step 7D3: Engine-owned insurance.
+// Shows the same insurance modal, but resolves with the chosen amount (0 = decline)
+// and does NOT mutate bankroll/insuranceBet directly.
+function awaitInsuranceEngine(maxBet){
+  return new Promise((resolve)=>{
+    insuranceEngineMode = true;
+    insuranceEngineBetTemp = 0;
     insuranceResolve = resolve;
     showInsuranceModal(maxBet);
   });
@@ -2900,11 +2750,46 @@ function finishHand(){
 }
 
 async function nextHandOrDealer(){
+  // v142C: Add a brief pause between split hands so the player can see
+  // the transition (final card, updated totals) before the next hand begins.
+  const prevIndex = activeHandIndex;
+  const prevDone  = !!(hands && hands[prevIndex] && hands[prevIndex].done);
+
   // Find next unfinished hand
   for(let i=0;i<hands.length;i++){
     if(!hands[i].done){
+      // Only pause when advancing from a finished hand to a different hand.
+      if(hands.length > 1 && prevDone && i !== prevIndex){
+        await pause(500);
+      }
+
       activeHandIndex = i;
       doubledThisHand = false;
+      // v140C: If this hand was created by a split and still needs its post-split card,
+      // deal/animate that card now, then let the player act.
+      if(hands[i].needsSplitCard){
+        hands[i].needsSplitCard = false;
+        hands[i].cards.push(draw());
+        beginPlayerTotalHold(hands[i].cards.length - 1);
+        renderHands();
+        await animateLastDealtCard(playerLane, true);
+        endPlayerTotalHold();
+
+        // Splitting aces: each hand receives one card and then stands (unless it becomes AA again).
+        if(hands[i].isAceSplit && hands[i].cards.length === 2){
+          const aa = hands[i].cards[0].r === 'A' && hands[i].cards[1].r === 'A';
+          if(!aa){
+            hands[i].done = true;
+            hands[i].acted = true;
+            renderHands();
+            setButtons();
+            // Move immediately to the next hand (or dealer) after auto-standing.
+            await nextHandOrDealer();
+            return;
+          }
+        }
+      }
+
       renderHands();
       setButtons();
       return;
@@ -2928,6 +2813,10 @@ async function dealerPlayAndSettle(){
 
   await animateRevealDealerHoleCard();
   holeDown = false;
+  // v156 FIX: Ensure the dealer hole card is visibly face-up after settlement.
+  // The reveal animation is best-effort and may no-op if the visual shell
+  // isn't in an expected state; re-render guarantees correctness.
+  renderHands();
 
   // Now the 2-card dealer hand is fully visible.
   dealerVisibleCount = dealerHand.length;
@@ -3011,39 +2900,9 @@ async function dealerPlayAndSettle(){
 
   // If this was a split round, hold all popups until the end and then show a single summary.
   if(hands.length > 1){
-    const lines = [];
-    for(let i=0;i<hands.length;i++){
-      const h = hands[i];
-      const w = h.wager || bet;
-      const busted = !!h.busted || (handTotal(h.cards) > 21);
-
-      let label = 'Lose';
-      let amt = w;
-
-      if(busted){
-        label = 'Bust';
-        amt = w;
-      }else if(h.outcome === 'push'){
-        label = 'Push';
-        amt = 0;
-      }else if(h.outcome === 'win'){
-        label = 'Win';
-        amt = w;
-      }else if(h.outcome === 'blackjack'){
-        label = 'Win';
-        amt = Math.floor(1.5*w);
-      }else{
-        label = 'Lose';
-        amt = w;
-      }
-
-      lines.push(`Hand ${i+1}: ${label} $${Math.abs(amt)}`);
-    }
-
-    let totalLabel = (delta > 0) ? 'Total: Win' : (delta < 0) ? 'Total: Lose' : 'Total: Push';
-    lines.push(`${totalLabel} $${Math.abs(delta)}`);
-
-    showResultPopup(lines.join('\n') + roundTotalsBlock());
+    // v138C: Show a table-style split summary with mini card icons.
+    const node = buildSplitResultsNode(dv, hands, delta);
+    showResultPopupNode(node);
 
     inRound = false;
   updateHud();
@@ -3105,7 +2964,45 @@ function applyOutcomeHighlight(outcome){
   }
 }
 
+function endOfRoundFinalizeOnce(reason){
+  /* v158D: Single authoritative end-of-round cleanup.
+     - Forces all dealer cards face-up
+     - Commits final renders/labels/HUD/buttons
+     - Runs exactly once per round (keyed by cycleToken)
+  */
+  try{
+    if(!dealerHand || !dealerHand.length) return;
+
+    // Only run after settlement / round end.
+    if(inRound) return;
+
+    // Gate: once per round token.
+    if(_roundFinalizedToken === cycleToken) return;
+    _roundFinalizedToken = cycleToken;
+
+    holeDown = false;
+    dealerTotalHold = false;
+    dealerVisibleCount = dealerHand.length;
+
+    // Final authoritative UI refresh.
+    renderHands();
+    updateLabels();
+    updateHud();
+    setButtons();
+  }catch(_e){ /* ignore */ }
+}
+
+
+// v158D: Allow UI modules (result popup) to invoke canonical finalization when needed.
+window.endOfRoundFinalizeOnce = endOfRoundFinalizeOnce;
+
+// v158D: Back-compat alias (older call sites).
+function endOfRoundRevealSafety(){
+  endOfRoundFinalizeOnce('legacySafety');
+}
+
 async function cycleResults(token){
+  endOfRoundRevealSafety();
   for(let i=0;i<hands.length;i++){
     if(token !== cycleToken) return;
     activeHandIndex = i;
@@ -3220,24 +3117,25 @@ async function onSplit(){
   const [c1, c2] = h.cards;
   const splittingAces = (c1.r === "A" && c2.r === "A");
 
-  const first  = {cards:[c1], isAceSplit:splittingAces, done:false, outcome:null, wager: baseWager, fromSplit:true, acted:false, surrendered:false};
-  const second = {cards:[c2], isAceSplit:splittingAces, done:false, outcome:null, wager: baseWager, fromSplit:true, acted:false, surrendered:false};
+  const first  = {cards:[c1], isAceSplit:splittingAces, done:false, outcome:null, wager: baseWager, fromSplit:true, acted:false, surrendered:false, needsSplitCard:false};
+  const second = {cards:[c2], isAceSplit:splittingAces, done:false, outcome:null, wager: baseWager, fromSplit:true, acted:false, surrendered:false, needsSplitCard:true};
 
   hands.splice(activeHandIndex, 1, first, second);
 
-  // Deal one card to each new hand immediately
+  // v140C: Deal/animate ONLY the active (first) split hand's next card.
+  // The next hand will receive its first post-split card only when it becomes active.
   first.cards.push(draw());
-  second.cards.push(draw());
+  beginPlayerTotalHold(first.cards.length - 1);
+  renderHands();
+  await animateLastDealtCard(playerLane, true);
+  endPlayerTotalHold();
 
-  if(splittingAces){
-    // After splitting aces, each hand normally receives only one card and then stands.
-    // Exception: if that one card is also an Ace (making AA again), allow re-splitting.
-    const firstIsAA  = first.cards.length === 2 && first.cards[0].r === "A" && first.cards[1].r === "A";
-    const secondIsAA = second.cards.length === 2 && second.cards[0].r === "A" && second.cards[1].r === "A";
-    first.done  = !firstIsAA;
-    second.done = !secondIsAA;
-
-    if(first.done){
+  // Splitting aces: each hand gets one card then stands (unless it becomes AA again).
+  if(splittingAces && first.cards.length === 2){
+    const firstIsAA = first.cards[0].r === "A" && first.cards[1].r === "A";
+    if(!firstIsAA){
+      first.done = true;
+      first.acted = true;
       setButtons();
       await nextHandOrDealer();
       return;
@@ -3245,23 +3143,6 @@ async function onSplit(){
   }
 
   doubledThisHand = false;
-  // Animate the two split-deal cards by briefly rendering each hand.
-  const baseIndex = activeHandIndex;
-
-  beginPlayerTotalHold(1);
-  renderHands();
-  await animateLastDealtCard(playerLane, true);
-  endPlayerTotalHold();
-
-  // Flash to the second hand to show its dealt card, then return.
-  if(hands.length > baseIndex + 1){
-    activeHandIndex = baseIndex + 1;
-    beginPlayerTotalHold(1);
-    renderHands();
-    await animateLastDealtCard(playerLane, true);
-    endPlayerTotalHold();
-  }
-  activeHandIndex = baseIndex;
   renderHands();
   setButtons();
 }
@@ -3269,24 +3150,7 @@ async function onSplit(){
 
 
 /*** Controls ***/
-dealBtn.addEventListener("click", async ()=>{
-  // v91: no top debug/status bar during normal play.
-  if(inRound || gameOver) return;
-  try{
-    await startRound();
-  }catch(err){
-    console.error('Deal failed', err);
-    // Fail-safe: un-wedge the UI so you can try again without reloading.
-    inRound = false;
-    holeDown = true;
-    dealerHand = [];
-    hands = [{cards:[], isAceSplit:false, done:false, outcome:null, wager: bet, fromSplit:false, acted:false, surrendered:false}];
-    activeHandIndex = 0;
-    renderHands();
-    updateHud();
-    setButtons();
-  }
-});
+// v143D Step 6: Gameplay button wiring moved to ui/desktop/desktop_ui.js
 
 
 
@@ -3329,18 +3193,20 @@ async function onSurrender(){
   applyOutcomeHighlight('lose');
   cycleResults(myToken);
 }
-hitBtn.addEventListener("click", async ()=>{ if(inRound) await onHit(); });
-standBtn.addEventListener("click", async ()=>{ if(inRound) await onStand(); });
-doubleBtn.addEventListener("click", async ()=>{ if(inRound) await onDouble(); });
-splitBtn.addEventListener("click", async ()=>{ if(inRound) await onSplit(); });
-  surrenderBtn.addEventListener("click", async ()=>{ if(inRound) await onSurrender(); });
+// (hit/stand/double/split/surrender listeners moved to desktop_ui.js)
 
 // ----------------------
 // Dev/QA tools (hidden in production)
 // ----------------------
 if(!DEV_TOOLS_ENABLED){
   if(devToolsRow) devToolsRow.style.display = 'none';
+  if(devBadge) devBadge.style.display = 'none';
 }else{
+  // Make dev tools visible in dev builds (CSS defaults to hidden).
+  if(devToolsRow) devToolsRow.style.display = 'flex';
+  // Small DEV badge (top-left) to make it obvious this is a debug build.
+  if(devBadge) devBadge.style.display = 'block';
+
   /**
    * Test Splits
    * ----------
@@ -3484,6 +3350,147 @@ function init(){
   initAudio();
   wireDelegatedUI();
   bindInsuranceHandlers();
+
+  // v143D Step 5: Introduce engine facade (no behavior change).
+  // The engine currently wraps legacy globals so we can migrate orchestration
+  // gradually without rewriting gameplay.
+  try{
+    if(window.BJ && BJ.engine && typeof BJ.engine.createGame === 'function'){
+      // v144D Step 7A: Provide a legacy adapter so the engine can begin owning
+      // round-start sequencing without touching the DOM directly.
+      // NOTE: This adapter is an internal bridge only. Gameplay behavior
+      // should remain unchanged.
+      BJ.legacy = {
+        // --- Core round/bankroll state (top-level `let` bindings) ---
+        get bankroll(){ return bankroll; },
+        set bankroll(v){ bankroll = v; },
+        get bet(){ return bet; },
+        set bet(v){ bet = v; },
+        get inRound(){ return inRound; },
+        set inRound(v){ inRound = v; },
+        get holeDown(){ return holeDown; },
+        set holeDown(v){ holeDown = v; },
+        get dealerHand(){ return dealerHand; },
+        set dealerHand(v){ dealerHand = v; },
+        get dealerTotalHold(){ return dealerTotalHold; },
+        set dealerTotalHold(v){ dealerTotalHold = v; },
+        get dealerVisibleCount(){ return dealerVisibleCount; },
+        set dealerVisibleCount(v){ dealerVisibleCount = v; },
+        get hands(){ return hands; },
+        set hands(v){ hands = v; },
+        get activeHandIndex(){ return activeHandIndex; },
+        set activeHandIndex(v){ activeHandIndex = v; },
+        get doubledThisHand(){ return doubledThisHand; },
+        set doubledThisHand(v){ doubledThisHand = v; },
+        get roundStartBankroll(){ return roundStartBankroll; },
+        set roundStartBankroll(v){ roundStartBankroll = v; },
+        get noNewBets(){ return noNewBets; },
+        set noNewBets(v){ noNewBets = v; },
+        get roundPopupOverride(){ return roundPopupOverride; },
+        set roundPopupOverride(v){ roundPopupOverride = v; },
+        get insuranceBet(){ return insuranceBet; },
+        set insuranceBet(v){ insuranceBet = v; },
+        get insurancePending(){ return insurancePending; },
+        set insurancePending(v){ insurancePending = v; },
+        get insuranceResolve(){ return insuranceResolve; },
+        set insuranceResolve(v){ insuranceResolve = v; },
+        get cycleToken(){ return cycleToken; },
+        set cycleToken(v){ cycleToken = v; },
+        get testSplits(){ return testSplits; },
+        set testSplits(v){ testSplits = v; },
+        get testInsuranceMode(){ return testInsuranceMode; },
+        set testInsuranceMode(v){ testInsuranceMode = v; },
+        get DEV_TOOLS_ENABLED(){ return DEV_TOOLS_ENABLED; },
+
+        // --- UI element handles (for animation helpers that take lanes) ---
+        ui: {
+          get playerLane(){ return playerLane; },
+          get dealerLane(){ return dealerLane; },
+        },
+
+        // --- Function hooks (engine can call these without importing DOM) ---
+        fns: {
+          clearHighlights,
+          hidePopup,
+          dbgStep,
+          updateHud,
+          renderHands,
+          setButtons,
+          beginPlayerTotalHold,
+          endPlayerTotalHold,
+          animateLastDealtCard,
+          pause,
+          showResultPopup,
+          showFundsModal,
+          showResultPopupNode,
+          buildSplitResultsNode,
+          roundTotalsBlock,
+          updateLabels,
+          animateRevealDealerHoleCard,
+          maybeShowFundsModalWhenBroke,
+          applyOutcomeHighlight,
+          cycleResults,
+          finishHand,
+          nextHandOrDealer,
+          maybeOfferInsuranceAndPeek,
+          awaitInsuranceEngine,
+          showInsuranceResultModal,
+          draw,
+          drawSpecific,
+          drawMatching,
+          roundMoney,
+        },
+      };
+
+      BJ.game = BJ.engine.createGame({ adapter: BJ.legacy });
+      // Optional: expose for dev console debugging (does not affect gameplay).
+      window.game = BJ.game;
+
+      // v154D: Persistence (bankroll + ledger) mounts here, isolated from UI and engine.
+      try{
+        if(window.BJ && BJ.persistController && typeof BJ.persistController.mount === 'function'){
+          BJ.persistController.mount({ game: BJ.game, adapter: BJ.legacy, maxHands: 2000 });
+        }
+      }catch(_e){ /* non-fatal */ }
+    }
+  }catch(_e){ /* non-fatal */ }
+
+  // v143D Step 6: Controls wiring moved out of script.js
+  // (buttons + Enter-to-Deal) into ui/desktop/desktop_ui.js.
+  try{
+    if(window.BJ && BJ.desktop && typeof BJ.desktop.mountControls === 'function'){
+      BJ.desktop.mountControls({
+        dealBtn,
+        hitBtn,
+        standBtn,
+        doubleBtn,
+        splitBtn,
+        surrenderBtn,
+        isInRound: () => inRound,
+        isGameOver: () => gameOver,
+        deal: async () => {
+          // Mirror legacy behavior: only deal when idle.
+          return BJ.game ? BJ.game.action(BJ.engine.ACTIONS.START_ROUND) : startRound();
+        },
+        hit: async () => (BJ.game ? BJ.game.action(BJ.engine.ACTIONS.HIT) : onHit()),
+        stand: async () => (BJ.game ? BJ.game.action(BJ.engine.ACTIONS.STAND) : onStand()),
+        double: async () => (BJ.game ? BJ.game.action(BJ.engine.ACTIONS.DOUBLE) : onDouble()),
+        split: async () => (BJ.game ? BJ.game.action(BJ.engine.ACTIONS.SPLIT) : onSplit()),
+        surrender: async () => (BJ.game ? BJ.game.action(BJ.engine.ACTIONS.SURRENDER) : onSurrender()),
+        onDealError: (err) => {
+          // Fail-safe: un-wedge the UI so you can try again without reloading.
+          inRound = false;
+          holeDown = true;
+          dealerHand = [];
+          hands = [{cards:[], isAceSplit:false, done:false, outcome:null, wager: bet, fromSplit:false, acted:false, surrendered:false}];
+          activeHandIndex = 0;
+          renderHands();
+          updateHud();
+          setButtons();
+        },
+      });
+    }
+  }catch(_e){ /* non-fatal */ }
 
   updateHud();
   dealerValue.textContent = "";
@@ -3633,6 +3640,10 @@ function wireDelegatedUI(){
     if(t.id === 'settingsBankroll' || t.id === 'addChipsAmt'){
       filterBankrollField(t);
     }
+    if(t.id === 'settingsPenetration'){
+      const lab = getEl('settingsPenetrationLabel');
+      if(lab) lab.textContent = String(t.value) + '%';
+    }
   }, true);
 
   // Currency-style display for bankroll-ish fields.
@@ -3673,7 +3684,8 @@ function wireDelegatedUI(){
 
     // Decks select or locked rule radios within Settings.
     const lockedRuleIds = new Set([
-      'hitSoft17Yes','hitSoft17No','staySoft17Yes','staySoft17No','surrenderYes','surrenderNo'
+      'hitSoft17Yes','hitSoft17No','staySoft17Yes','staySoft17No','surrenderYes','surrenderNo',
+      'randomCutYes','randomCutNo','settingsPenetration'
     ]);
 
     const radio = (t.tagName && String(t.tagName).toUpperCase() === 'INPUT' && t.type === 'radio') ? t : null;
@@ -3685,7 +3697,9 @@ function wireDelegatedUI(){
 
     const isDecks = (id === 'settingsDecks') || (t.closest && t.closest('#settingsDecks'));
 
-    if(isDecks || isLockedRuleRadio){
+    const isCutSlider = (id === "settingsPenetration") || (t.closest && t.closest("#settingsPenetration"));
+
+    if(isDecks || isLockedRuleRadio || isCutSlider){
       e.preventDefault();
       e.stopPropagation();
       showPopup('Table rules cannot be changed in the middle of a shoe.');
@@ -3702,7 +3716,9 @@ function wireDelegatedUI(){
         id === 'settingsDecks' ||
         id === 'hitSoft17Yes' || id === 'hitSoft17No' ||
         id === 'staySoft17Yes' || id === 'staySoft17No' ||
-        id === 'surrenderYes' || id === 'surrenderNo'
+        id === 'surrenderYes' || id === 'surrenderNo' ||
+        id === 'randomCutYes' || id === 'randomCutNo' ||
+        id === 'settingsPenetration'
       );
       if(isLockedRuleControl){
         // Allow Tab to move focus out.
@@ -3772,6 +3788,41 @@ function wireDelegatedUI(){
       return;
     }
 
+    // v157: Cut policy UI behavior in Settings
+    if(t.id === 'randomCutYes' || t.id === 'randomCutNo'){
+      const rulesLocked = areTableRulesLocked();
+      if(rulesLocked){
+        e.preventDefault();
+        e.stopPropagation();
+        // Revert checked state back to current
+        const y = getEl('randomCutYes');
+        const n = getEl('randomCutNo');
+        if(y && n){
+          y.checked = !!CUT_RANDOM_CUT_CARD;
+          n.checked = !CUT_RANDOM_CUT_CARD;
+        }
+        showPopup('Table rules cannot be changed in the middle of a shoe.');
+        return;
+      }
+      const slider = getEl('settingsPenetration');
+      const lab = getEl('settingsPenetrationLabel');
+      const wantRandom = !!(getEl('randomCutYes') && getEl('randomCutYes').checked);
+      if(slider){
+        if(wantRandom){
+          slider.value = '75';
+          slider.disabled = true;
+          slider.setAttribute('aria-disabled','true');
+          if(lab) lab.textContent = '75%';
+        }else{
+          slider.disabled = false;
+          slider.setAttribute('aria-disabled','false');
+          // keep current stored value in the UI if possible
+          slider.value = String(CUT_PENETRATION_PERCENT);
+          if(lab) lab.textContent = String(CUT_PENETRATION_PERCENT) + '%';
+        }
+      }
+      return;
+    }
     if(t.id === 'hitSoft17Yes' || t.id === 'hitSoft17No' || t.id === 'staySoft17Yes' || t.id === 'staySoft17No'){
       enforceSoft17Mutual(t.id);
     }

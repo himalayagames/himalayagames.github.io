@@ -1,5 +1,4 @@
-
-
+NOTE: Append new versions to the BOTTOM of this file so entries stay in chronological order.
 
 v61 — 2026-01-19
 - Added targeted console snapshots around slide/flip/cleanup to diagnose post-flip vertical drop.
@@ -351,3 +350,202 @@ v134C — 2026-01-25
 v135C — 2026-01-25
 - Results popup: DEAL button remains clickable while results popup is visible; clicking DEAL dismisses popup and deals immediately.
 - Controls: Pressing Return/Enter triggers DEAL (default action), including when results popup is visible.
+
+v136C — 2026-01-26
+- Results popup: Only clicks *inside the popup window* dismiss it (clicking outside no longer dismisses or interferes with DEAL).
+
+v137C — 2026-01-30
+- Results popup: Popup overlay is now sized tightly to the popup card so clicks on DEAL are never blocked.
+
+v138C — 2026-01-30
+- Split rounds: End-of-round results now display as a table with “Dealer gets X” plus one section per hand.
+- Split rounds: Each hand shows mini card-rank icons (rank only; no suits/pips/art) and its outcome + amount.
+- Split rounds: Added bottom “Total” line summarizing net win/lose/push across all hands.
+- Dev/QA: Enabled dev tools so the Test Splits button is available.
+
+v139C — 2026-01-30
+- Dev/QA: Dev tools are enabled and visible.
+- Dev/QA: Added a small “DEV” badge in the top-left when dev tools are enabled.
+
+v140C — 2026-01-30
+- Dev/QA: DEV badge now continuously cycles yellow → blue → yellow (1s loop).
+- Totals UI: Soft hands now show only ONE total (best playable total = highest ≤ 21). No more “low / high” display.
+- Split play flow: After a split, only the active hand receives its first post-split card; the player resolves Hand 1 fully before Hand 2 begins. No bouncing between hands.
+- Split results popup: Mini card rank text is larger; each hand row now shows cards, hand total, and “Win/Push/Lose …$X” on the same line with fixed columns to prevent jiggling.
+
+v141C — 2026-01-30
+- Split play flow: Added a 500ms pause when advancing from one split hand to the next so the player can see the transition.
+- Split results popup: Tightened spacing so hand totals/results sit closer to the mini cards while still expanding as hands grow.
+- Split results popup: Increased split-results typography by ~20% so Hand labels/totals/outcomes match the Dealer/Total lines.
+
+
+v142C — 2026-01-30
+- Split results popup: Reworked hand-row layout to use symmetric spacing between label, cards, total, and outcome (totals/outcomes stay close to the cards).
+
+v143 — 2026-02-01
+- STEP 1 (skeleton only): Added folder structure for clean Engine/UI separation with zero intended gameplay changes.
+- Desktop still runs the v142C monolith (script.js). New v143 files are placeholders + documentation headers only.
+- New folders added:
+  - core/        (future DOM-free engine/rules/shoe)
+  - ui/desktop/  (future desktop render + controls + modals + audio + scaling)
+  - dev/         (future deck viewer + diagnostics)
+- index.html: loads skeleton modules before script.js.
+- Plan forward:
+  - Step 2: extract pure helpers into core/utils.js
+  - Step 3: extract shoe into core/shoe.js (remove UI coupling)
+  - Step 4: extract blackjack rules into core/rules_blackjack.js
+  - Step 5: create core/engine.js state + actions; desktop becomes an engine consumer
+  - Step 6: move desktop UI pieces into ui/desktop/
+
+v143D Step 2 — 2026-02-01 — Extract pure helpers into core/utils.js (no behavior change intended)
+- Moved safe, DOM-free helper functions out of script.js into core/utils.js:
+  pause, max0, intMs, nextFrame, roundMoney, fmtMoney, clampToHalfDollar, digitsOnly, snapToNearest5, formatUSD0
+- script.js now imports these via BJ.utils destructuring at the top.
+- Purpose: allows the upcoming engine/rules modules to reuse these helpers without pulling in UI code.
+
+v143D Step 3 — 2026-02-01 — Extract shoe/deck logic into core/shoe.js (no behavior change intended)
+- Moved shoe/deck build + shuffle + draw + cut-marker logic out of script.js into core/shoe.js as BJ.shoe (DOM-free).
+- script.js now keeps thin wrappers (newShuffledShoe/draw/drawSpecific/drawMatching) that call BJ.shoe and then perform UI-only reactions:
+  updateDeckViewer(), updateShoeDiscardIcons(), and triggerShuffleOverlay() when an immediate reshuffle occurs (only when not inRound).
+- Updated deck viewer + shoe/discard icon UI to read shoe state via BJ.shoe.getState() instead of using global shoe variables.
+- Flipped DEV_TOOLS_ENABLED default to false (DEV badge and dev-only toggles are off by default).
+
+v143D Step 3a — 2026-02-01 — Hotfix: restore legacy suit tokens for correct pip/face rendering
+- Fixed core/shoe.js to emit suit names (spades/hearts/diamonds/clubs) matching the existing UI render pipeline.
+- This resolves face-up card rendering showing "undefined" pips and incorrect face-card artwork.
+- Gameplay/shoe behavior unchanged; this is a representation compatibility fix only.
+
+v143D Step 4 — 2026-02-01 — Extract blackjack rule helpers into core/rules_blackjack.js (no behavior change intended)
+- Moved pure blackjack helper logic out of script.js into core/rules_blackjack.js as BJ.rulesBJ:
+  TEN_VALUE, cardValue(), isTenGroup(), handTotal(), handTotalDetailed(), isBlackjack(), canSplitPair().
+- script.js now imports these via BJ.rulesBJ destructuring near the top.
+- Purpose: these functions are the reusable "Model" layer for desktop + phone UIs and future game variants.
+
+v143D Step 5 — 2026-02-01 — Introduce core/engine.js facade (no behavior change intended)
+- Replaced the v143 placeholder core/engine.js with a real (DOM-free) engine *facade*:
+  BJ.engine.createGame() now returns { getState, action, subscribe }.
+- This Step 5 engine does not yet own the full blackjack orchestration; it calls through to existing legacy
+  global functions (startRound/onHit/onStand/onDouble/onSplit/onSurrender) so gameplay remains unchanged.
+- script.js now creates BJ.game during init (and also exposes window.game for easy console debugging).
+- Purpose: establish a stable Model/Controller boundary so desktop + future phone UI can consume a single
+  engine API while we progressively migrate orchestration into core/engine.js in later steps.
+
+v143D Step 6 — 2026-02-01 — Extract desktop control wiring into ui/desktop/desktop_ui.js (no behavior change intended)
+- Moved primary desktop control wiring (Deal/Hit/Stand/Double/Split/Surrender buttons + Enter-to-Deal) out of script.js
+  into ui/desktop/desktop_ui.js as BJ.desktop.mountControls(...).
+- script.js now calls BJ.desktop.mountControls() during init, passing closures so the helper can read legacy `let` state
+  variables (inRound/gameOver/etc.) without promoting them to globals.
+- Gameplay behavior is intended to be unchanged; this is a structural move preparing the next UI extractions.
+
+v144D Step 7A — 2026-02-01 — Begin migrating DEAL/startRound sequencing into core/engine.js (no behavior change intended)
+- Added a lightweight BJ.legacy adapter in script.js to expose legacy `let` state (bankroll/bet/hands/etc.), UI lane
+  references, and a small set of legacy functions as hooks.
+- Updated BJ.engine.createGame({ adapter }) so START_ROUND uses a new startRoundInEngine() implementation when the
+  adapter is provided.
+- startRoundInEngine mirrors the legacy startRound() call order and timing, but routes all state mutations through the
+  adapter and calls rendering/animation via adapter hooks (engine file remains DOM-free).
+- Purpose: make the engine the owner of round-start state transitions while keeping the game runnable after each step.
+
+v145D Step 7B — 2026-02-01 — Migrate HIT (onHit) sequencing into core/engine.js (no behavior change intended)
+- Implemented hitInEngine() in core/engine.js and, when a legacy adapter is provided, wired ACTIONS.HIT to use the
+  engine-owned implementation instead of calling global onHit().
+- hitInEngine mirrors the legacy onHit() flow: mark acted, draw one card, hold totals until flip, render/animate, bust
+  detection (including single-hand immediate bust popup override), then finishHand(), setButtons(), and
+  nextHandOrDealer() sequencing.
+- Expanded BJ.legacy.fns in script.js to include showResultPopup, finishHand, and nextHandOrDealer so the engine can
+  stay DOM-free while preserving exact legacy UI/pacing.
+- Purpose: continue moving round flow/state transitions into the DOM-free engine while keeping UI rendering/animation
+  responsibilities in the desktop UI + legacy hooks.
+
+v146D Step 7C — 2026-02-01 — Migrate STAND + dealer play + settlement sequencing into core/engine.js (no behavior change intended)
+- Implemented standInEngine(), nextHandOrDealerInEngine(), and dealerPlayAndSettleInEngine() in core/engine.js and wired
+  ACTIONS.STAND to use the engine-owned implementation when a legacy adapter is provided.
+- nextHandOrDealerInEngine mirrors legacy nextHandOrDealer(): advances across split hands (including the needsSplitCard
+  flow and split-aces auto-stand behavior) and calls dealerPlayAndSettleInEngine when all player hands are done.
+- dealerPlayAndSettleInEngine mirrors the legacy dealerPlayAndSettle(): reveal dealer hole card, dealer draw loop with
+  soft-17 rule, outcome determination (win/lose/push/blackjack), bankroll settlement, and end-of-round state transitions.
+  All UI work (rendering, animations, popups, highlights, cycling results) is performed via adapter hooks so the engine
+  remains DOM-free.
+- Expanded BJ.legacy adapter in script.js with dealer visibility/hold state and additional UI/legacy hooks needed by the
+  engine (updateLabels, animateRevealDealerHoleCard, split summary popup helpers, highlights/cycleResults, etc.).
+- Purpose: make the engine the owner of full round completion (player stand → dealer → settle → round end) while keeping
+  the desktop UI responsible only for rendering/animation.
+
+v147D Step 7D1 — 2026-02-02 — Migrate DOUBLE (onDouble) sequencing into core/engine.js (no behavior change intended)
+- Implemented doubleInEngine() in core/engine.js and, when a legacy adapter is provided, wired ACTIONS.DOUBLE to use the
+  engine-owned implementation instead of calling global onDouble().
+- doubleInEngine mirrors the legacy onDouble() flow: validate 2-card hand, insufficient-funds modal with retry, deduct
+  additional wager, double the hand wager, update HUD, mark doubledThisHand, draw exactly one card with total-hold,
+  render/animate, then finishHand(), setButtons(), and nextHandOrDealer() sequencing.
+- Purpose: continue completing the round/action migration so UI only issues game.action(...) while engine owns state
+  transitions and legality.
+
+v148D Step 7D1b — 2026-02-02 — Fix DOUBLE-to-bust popup + enable Dev Tools for easier split testing
+- Fixed engine DOUBLE action (doubleInEngine) to show the same immediate single-hand bust popup as HIT, so a DOUBLE bust
+  always gives player feedback even when dealer settlement short-circuits due to all-player-busted.
+- Enabled DEV_TOOLS_ENABLED so the on-screen dev controls (e.g., Test Splits) are visible for QA without affecting normal
+  gameplay unless toggled.
+
+v149D Step 7D1c — 2026-02-02 — Fix split-round DOUBLE-bust end-of-round results popup (no behavior change intended)
+- Fixed engine dealerPlayAndSettleInEngine() early-exit path when all player hands have busted: split rounds now still
+  show the legacy-style split summary popup with per-hand outcomes and round delta, instead of ending silently.
+- Purpose: preserve user feedback parity with legacy behavior during split-hand rounds where dealer play short-circuits.
+
+v150D Step 7D2 — 2026-02-02 — Migrate SPLIT (onSplit) sequencing into core/engine.js (no behavior change intended)
+- Implemented splitInEngine() in core/engine.js and, when a legacy adapter is provided, wired ACTIONS.SPLIT to use the
+  engine-owned implementation instead of calling global onSplit().
+- splitInEngine mirrors legacy onSplit(): validate split eligibility (2-card pair / ten-group), enforce max split hands,
+  insufficient-funds modal with retry, deduct additional wager, create two split hands with needsSplitCard flag, deal and
+  animate ONLY the active (first) split hand’s next card, and preserve split-aces auto-stand behavior.
+- Purpose: complete player-action migration so split-hand creation/progression is engine-owned, keeping UI purely input + render.
+v151D Step 7D3 — 2026-02-02 — Migrate INSURANCE offer/peek/early-BJ settlement into core/engine.js (no behavior change intended)
+- Engine now owns insurance offer + dealer peek + early blackjack settlements (dealer BJ / player BJ) in core/engine.js.
+- Added engine-mode insurance modal bridge (awaitInsuranceEngine) so the UI collects the wager but the engine applies bankroll/insurance state.
+- Added adapter hooks for awaitInsuranceEngine and showInsuranceResultModal.
+- Purpose: complete action/round migration so insurance behavior is engine-owned and consistent with the refactor architecture.
+
+v152D Step 7D4 — 2026-02-02 — Cleanup: extract desktop audio + result popup helpers out of script.js (no behavior change intended)
+- Moved deal/flip + riffle sound effect setup and playback into ui/desktop/desktop_audio.js; preserved legacy global function names.
+- Moved result popup + split-results table builder into ui/desktop/desktop_modals.js; preserved legacy global function names.
+- Updated the result-popup dismiss click handler in script.js to use the extracted modal helpers.
+- Purpose: shrink script.js to focus on bootstrap + wiring, while keeping UI behavior unchanged.
+
+v153D — 2026-02-02 — Hotfix: restore SFX after v152D cleanup
+- Fixed ui/desktop/desktop_audio.js to correctly read the top-level GAME_SOUNDS_ON flag (top-level `let` is not a window property).
+- Result: deal/flip and riffle sound effects play again when sounds are enabled.
+
+v154D — 2026-02-02 — Persistence: bankroll + rolling ledger + Graph Winnings (no gameplay changes intended)
+- Added a modular persistence layer (persistence/storage.js, persistence/ledger.js, persistence/persist_controller.js).
+- Persisted data: bankroll + a rolling bankroll-per-hand ledger (last 2,000 completed hands) saved to localStorage.
+- On boot (between rounds), the saved bankroll is restored automatically.
+- Engine emits an optional adapter hook (adapter.onRoundSettled) so persistence can log completed rounds without UI entanglement.
+- Added a Settings button: GRAPH WINNINGS, opening a simple modal line chart of bankroll per hand.
+- Set DEV_TOOLS_ENABLED default to false.
+
+v155D — 2026-02-02 — Persistence: Clear Data + reset bankroll
+- Added a Settings button: CLEAR DATA (next to GRAPH WINNINGS).
+- CLEAR DATA opens a confirmation modal; NO cancels, YES deletes saved localStorage data and clears the graph ledger.
+- After clearing data, bankroll resets to $500 and is immediately re-saved as the new baseline.
+
+v156D — 2026-02-02 — Bugfix: shuffle freeze + insurance-decline hole reveal
+- Fixed shuffle overlay freeze by removing dependency on the legacy riffleSfxBase global (audio is now module-owned).
+- Added a try/finally guard to the shuffle overlay so the UI can never remain locked if audio/animation fails.
+- Ensured the dealer hole card is always revealed after settlement by re-rendering immediately after holeDown=false in dealerPlayAndSettle().
+
+v157 — 2026-02-02
+- FIX: Added end-of-round safety reveal to ensure any dealer face-down cards (hole card) are flipped face-up after settlement (covers insurance-declined + player-blackjack edge cases).
+- UI: Settings modal now always renders above end-of-round popups.
+- FEATURE: Added cut card controls in Settings:
+  - Random Cut Card (Yes/No). Default No.
+  - Deck Penetration slider (65%–90% in 5% steps). Default 75%.
+  - When Random Cut Card = Yes, slider is shown but disabled and pinned at 75%.
+  - When Random Cut Card = No, slider is enabled and sets a deterministic cut marker position.
+
+v158D — 2026-02-03 — Low-risk refactor: canonical round-end finalizer + centralized overlay z-indexes (no gameplay changes intended)
+- Added a single authoritative end-of-round finalizer (endOfRoundFinalizeOnce) that flips any dealer face-down cards, then performs a final render/labels/HUD/buttons refresh.
+- Result popup reveal logic now prefers the canonical finalizer (desktop_modals.js) and falls back to the legacy direct reveal only if needed.
+- Centralized overlay layering via CSS variables: --z-modalBase, --z-popup, --z-help, --z-settings (Settings remains always above result popups).
+
+v159D — 2026-02-03 — Layering fix: Graph/Clear Data modals above Settings; Settings above end-of-round popups
+- Added --z-settingsTools and applied it to Bankroll Graph + Clear Data modals so they always stack above Settings.
+- Preserved the existing rule that Settings stacks above end-of-round/result popups.

@@ -7,7 +7,7 @@
 <title>Yeti Blackjack</title>
 <script>
   // Single source of truth for the running build.
-  const APP_VERSION = "Yeti Blackjack v135C";
+  const APP_VERSION = "Yeti Blackjack v159D";
 </script>
 <!-- Libre Baskerville -->
 <link href="https://fonts.googleapis.com" rel="preconnect"/>
@@ -20,6 +20,13 @@
   --gold:#d7b45a;
   --uiScale: 1;
 
+
+  /* v158D+: Centralized overlay z-indexes */
+  --z-modalBase: 10000;
+  --z-popup: 20050;      /* end-of-round/result popups */
+  --z-help: 10020;       /* help scroll */
+  --z-settings: 30060;   /* settings modal */
+  --z-settingsTools: 40080; /* graph + clear-data confirmations */
   /* Card size (shrunk ~15% vs earlier) */
   --cardW: calc(204px * var(--uiScale));
   --cardH: calc(286px * var(--uiScale)); /* ~1.4 ratio */
@@ -562,10 +569,22 @@ pointer-events:none;
 
 /* Help Scroll Modal */
 #helpModal.modalOverlay{
-  z-index: 10020; /* above settings */
+  z-index: var(--z-help); /* above settings */
   background: rgba(0,0,0,0.40);
 }
 #helpModal.hidden{ display:none; }
+
+/* v157: Settings must always appear above end-of-round popups */
+#settingsModal.modalOverlay{
+  z-index: var(--z-settings);
+}
+
+/* v159D: Graph + Clear Data modals must appear above Settings */
+#bankrollGraphModal.modalOverlay,
+#clearDataModal.modalOverlay{
+  z-index: var(--z-settingsTools);
+}
+
 
 .scrollWrap{
   width: min(860px, 92vw);
@@ -725,6 +744,33 @@ pointer-events:none;
 
 /* v101B: Production build hides dev/test controls (JS also enforces this). */
 #devToolsRow{ display:none; }
+
+/* v140C: DEV badge (visible only when DEV_TOOLS_ENABLED/DEBUG is true via JS) */
+#devBadge{
+  position: fixed;
+  top: 10px;
+  left: 10px;
+  z-index: 10005;
+  display: none;
+  padding: 6px 10px;
+  border-radius: 10px;
+  font-weight: 900;
+  letter-spacing: 1px;
+  font-size: 14px;
+  border: 2px solid rgba(0,0,0,.35);
+  box-shadow: 0 6px 18px rgba(0,0,0,.35);
+  background: #ffd400;
+  color: #000;
+  user-select: none;
+  pointer-events: none;
+  /* v140C: continuously cycle yellow → blue → yellow over 1 second */
+  animation: devBadgeShift 1s linear infinite;
+}
+@keyframes devBadgeShift{
+  0%   { background:#ffd400; color:#000; }
+  50%  { background:#2f6dff; color:#fff; }
+  100% { background:#ffd400; color:#000; }
+}
 .toggle{
   background:#222;
   color:#f7e6b0;
@@ -791,16 +837,18 @@ pointer-events:none;
 }
 
 .popupOverlay{
-  /* v134C: allow clicks to dismiss the end-of-hand result popup */
+  /* v137C: Make the result popup *only* cover the popup card, so underlying controls (DEAL) remain clickable. */
   pointer-events:auto;
   position:fixed;
-  inset:0;
+  left:50%;
+  top:50%;
+  transform: translate(-50%, -50%);
   display:flex;
   align-items:center;
   justify-content:center;
-  background: transparent; /* dim cards only, not controls */
+  background: transparent;
   /* v88: Must appear above Settings/About modals (modalOverlay uses 10000). */
-  z-index: 20050;
+  z-index: var(--z-popup);
 }
 .popupOverlay.hidden{ display:none; }
 .popupCard{
@@ -812,12 +860,88 @@ pointer-events:none;
   min-width: 280px;
   box-shadow: 0 22px 48px rgba(0,0,0,.55);
 }
+.popupCard.splitMode{
+  /* v138C: Split results table needs a bit more room. */
+  min-width: min(92vw, 720px);
+  max-width: min(92vw, 720px);
+}
 .popupText{
   font-size: 28px;
   font-weight: 900;
   letter-spacing: .02em;
   color: #f7e6b0;
   white-space: pre-line;
+}
+
+/* v138C: Split-round results table */
+.splitResults{
+  /* v141C: scale split-results popup typography up ~20% for readability */
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: .01em;
+  color: #f7e6b0;
+  white-space: normal;
+}
+.srDealer{
+  font-size: 24px;
+  margin-bottom: 10px;
+}
+.srRow{
+  /* v142C: Use flex row so spacing is symmetric: label↔cards == cards↔total == total↔outcome.
+     Totals/outcomes stay close to the cards, while the cards block can expand as more cards are present. */
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+.srHandLabel{
+  width: 110px;
+  flex: 0 0 110px;
+  font-size: 22px;
+  white-space: nowrap;
+  opacity: .95;
+}
+.srCards{
+  display:flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items:center;
+}
+.miniCard{
+  /* v140C: bigger mini-cards + 100% larger rank text */
+  width: 42px;
+  height: 56px;
+  border-radius: 6px;
+  background: rgba(245,245,245,.96);
+  border: 2px solid rgba(215,180,90,.55);
+  color: #111;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  font-size: 32px;
+  font-weight: 1000;
+  line-height: 1;
+  box-shadow: 0 6px 14px rgba(0,0,0,.35);
+}
+.srHandTotal{
+  font-size: 22px;
+  opacity: .95;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.srHandOutcome{
+  font-size: 22px;
+  opacity: .95;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.srTotal{
+  margin-top: 14px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(215,180,90,.35);
+  font-size: 24px;
 }
 
 
@@ -831,7 +955,7 @@ pointer-events:none;
   display:flex;
   align-items:center;
   justify-content:center;
-  z-index: 10000;
+  z-index: var(--z-modalBase);
   background: transparent;
 }
 .modalOverlay.hidden{ display:none; }
@@ -921,6 +1045,15 @@ pointer-events:none;
   #settingsModal .settingsInput::placeholder,
   #addChipsModal .settingsInput::placeholder{ color: rgba(0,0,0,0.45); }
   .settingsSelect{ width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.18); background: rgba(0,0,0,0.20); color: inherit; }
+
+.settingsRange{
+  width: 100%;
+  accent-color: rgba(215,180,90,.85);
+}
+#settingsModal .settingsRange:disabled{
+  opacity: 0.45;
+  filter: grayscale(0.65);
+}
   .settingsRadios{ display:flex; gap:14px; align-items:center; flex-wrap:wrap; }
   .settingsRadios label{ display:flex; gap:6px; align-items:center; cursor:pointer; }
 
@@ -1201,9 +1334,24 @@ border-bottom: 1px solid rgba(0,0,0,1.55);
   opacity:.92;
   line-height:1.35;
 }
+
+/* v154D: Bankroll graph modal */
+.bankrollGraphModal{ max-width: 760px; width: 94%; background:#ffffff; color:#111; border-radius:18px; padding:18px 18px 16px; }
+.bankrollGraphModal .modalTitle{ color:#111; }
+.bankrollGraphCanvas{ width:100%; height:340px; display:block; border-radius:12px; border:1px solid rgba(0,0,0,0.12); }
+@media (max-width: 520px){
+  .bankrollGraphCanvas{ height:260px; }
+}
+
+
+/* v154D: Bankroll graph modal */
+#bankrollGraphModal .modal{ max-width: 760px; width: 92%; background: #ffffff; color: #111; border-radius: 18px; padding: 18px 18px 16px; }
+#bankrollGraphModal .modalTitle{ color:#111; }
+#bankrollGraphModal .modalText{ color:#222; font-size:14px; line-height:1.35; }
 </style>
 </head>
 <body>
+<div aria-hidden="true" id="devBadge">DEV</div>
 <div aria-hidden="true" class="rotateOverlay hidden" id="rotateOverlay">
 <div class="box">
 <div class="title">Rotate to landscape</div>
@@ -1381,7 +1529,36 @@ border-bottom: 1px solid rgba(0,0,0,1.55);
 </div>
 </div>
 </div>
-</div><script src="cardholders.js"></script><script src="script.js"></script><div aria-label="Result" aria-modal="true" class="popupOverlay hidden" id="resultPopup" role="dialog">
+</div>
+
+  <!-- v143 Step 1: refactor skeleton (engine/UI split). No behavior changes yet. -->
+  <script src="cardholders.js"></script>
+
+  <!-- Core (DOM-free) -->
+  <script src="core/utils.js"></script>
+  <script src="core/shoe.js"></script>
+  <script src="core/rules_blackjack.js"></script>
+  <script src="core/engine.js"></script>
+
+  <!-- Desktop UI (rendering + controls) -->
+  <script src="ui/desktop/desktop_scale.js"></script>
+  <script src="ui/desktop/desktop_audio.js"></script>
+  <script src="ui/desktop/desktop_modals.js"></script>
+  <script src="ui/desktop/desktop_render.js"></script>
+  <script src="ui/desktop/desktop_ui.js"></script>
+
+  <!-- Dev tools (optional) -->
+  <script src="dev/diagnostics.js"></script>
+  <script src="dev/deck_viewer.js"></script>
+
+  <!-- v142C legacy monolith (still runs game). Will be decomposed in v143+ steps. -->
+  <script src="persistence/storage.js"></script>
+  <script src="persistence/ledger.js"></script>
+  <script src="persistence/persist_controller.js"></script>
+
+  <script src="ui/desktop/desktop_graph.js"></script>
+
+  <script src="script.js"></script><div aria-label="Result" aria-modal="true" class="popupOverlay hidden" id="resultPopup" role="dialog">
 <div class="popupCard">
 <div class="popupText" id="popupText">Result</div>
 </div>
@@ -1452,6 +1629,24 @@ border-bottom: 1px solid rgba(0,0,0,1.55);
 </select>
 </td>
 </tr>
+
+<tr>
+<td class="settingsLabel">Random Cut Card</td>
+<td class="settingsRadios">
+<label><input id="randomCutYes" name="randomCut" type="radio" value="yes"/> Yes</label>
+<label><input id="randomCutNo" name="randomCut" type="radio" value="no"/> No</label>
+</td>
+</tr>
+<tr>
+<td class="settingsLabel">Deck Penetration</td>
+<td>
+<div style="display:flex; align-items:center; gap:12px;">
+  <input class="settingsRange" id="settingsPenetration" type="range" min="65" max="90" step="5" value="75"/>
+  <div id="settingsPenetrationLabel" style="min-width:64px; text-align:right; font-weight:900;">75%</div>
+</div>
+</td>
+</tr>
+
 <tr>
 <td class="settingsLabel">Hit on Soft 17</td>
 <td class="settingsRadios">
@@ -1488,11 +1683,39 @@ border-bottom: 1px solid rgba(0,0,0,1.55);
 </td>
 </tr>
 </table>
+<div class="modalRow" style="justify-content:center; margin-top:10px; gap:12px;">
+<button class="btn secondary" id="graphWinningsBtn" type="button">GRAPH WINNINGS</button>
+<button class="btn secondary" id="clearDataBtn" type="button">CLEAR DATA</button>
+</div>
 <div class="modalRow" style="justify-content:center; margin-top:14px; gap:12px;">
 <button class="btn secondary" id="settingsCloseBtn" type="button">CLOSE</button>
 <button class="btn defaultBtn" id="settingsSaveBtn" type="button">ACCEPT</button>
 </div>
 </div>
+</div><div aria-label="Bankroll Graph" aria-modal="true" class="modalOverlay hidden" id="bankrollGraphModal" role="dialog">
+  <div class="modal bankrollGraphModal">
+    <div class="modalTitle" id="bankrollGraphTitle">Bankroll per Hand</div>
+    <div class="modalText" id="bankrollGraphNote" style="margin-top:6px;">
+      Showing your bankroll after each completed hand (last 2,000 hands).
+    </div>
+    <div style="margin-top:12px;">
+      <canvas id="bankrollGraphCanvas" class="bankrollGraphCanvas"></canvas>
+    </div>
+    <div class="modalRow" style="justify-content:center; margin-top:14px; gap:12px;">
+      <button class="btn defaultBtn" id="bankrollGraphCloseBtn" type="button">CLOSE</button>
+    </div>
+  </div>
+</div><div aria-label="Clear Data" aria-modal="true" class="modalOverlay hidden" id="clearDataModal" role="dialog">
+  <div class="modal" style="max-width:640px; width:92%; background:#ffffff; color:#111; border-radius:18px; padding:18px 18px 16px;">
+    <div class="modalTitle" style="color:#111;">Clear Saved Data</div>
+    <div class="modalText" id="clearDataText" style="margin-top:10px; font-size:14px; line-height:1.35; color:#222;">
+      This will delete all saved bankroll + graph history and reset your bankroll to <b>$500</b>. Is this what you want?
+    </div>
+    <div class="modalRow" style="justify-content:center; margin-top:16px; gap:12px;">
+      <button class="btn secondary" id="clearDataNoBtn" type="button">NO</button>
+      <button class="btn defaultBtn" id="clearDataYesBtn" type="button">YES</button>
+    </div>
+  </div>
 </div><div aria-label="About" aria-modal="true" class="modalOverlay hidden" id="aboutModal" role="dialog" style="display:none; pointer-events:none;">
 <div class="modal" style="max-width:640px; width:92%; background:#ffffff; color:#111; border-radius:18px; padding:18px 18px 16px;">
 <div class="modalTitle" style="color:#111;">About</div>
