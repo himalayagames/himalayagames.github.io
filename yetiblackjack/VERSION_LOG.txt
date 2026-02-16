@@ -549,3 +549,37 @@ v158D — 2026-02-03 — Low-risk refactor: canonical round-end finalizer + cent
 v159D — 2026-02-03 — Layering fix: Graph/Clear Data modals above Settings; Settings above end-of-round popups
 - Added --z-settingsTools and applied it to Bankroll Graph + Clear Data modals so they always stack above Settings.
 - Preserved the existing rule that Settings stacks above end-of-round/result popups.
+
+v162D — 2026-02-15
+- Added KO Training Mode (Settings → Training Mode Yes/No; default No).
+- Engine-side KO running count stored in core/shoe.js (2–7 +1, 8–9 0, 10–A −1).
+- Running count updates only when cards become visible (player cards, dealer upcard, revealed hole card, subsequent hits).
+- COUNT HUD pill appears to the right of Chips in Action when Training Mode is enabled; hover-to-reveal on hover-capable devices, tap-to-toggle on touch devices.
+- About/Instructions updated under Game Persistence with Training Mode description and KO IRC/Key Count reference table.
+
+v163D — 2026-02-15
+- UI: Fixed COUNT pill layout so it sits as its own small HUD box (no longer nested inside Chips in Action).
+- UI: Reduced COUNT pill width/typography so it behaves like a compact "bubble" and does not span the row.
+
+
+v164D — 2026-02-15
+- UI: Kept COUNT bubble on the same top HUD line by preventing desktop wrap (nowrap) and only allowing wrap on smaller screens (<980px).
+- UI: Made COUNT bubble smaller (min-width 120px) and allowed Chips in Action to flex/shrink so COUNT can sit immediately to its right.
+- UI: Slightly reduced fixed min-widths of the top HUD boxes to preserve spacing.
+
+v166D — 2026-02-15
+- UI: COUNT pill now sizes to the label by default (no extra empty width to the right when the value is hidden).
+- UI: COUNT value display is controlled via a .revealed class; when hidden, the value element does not reserve layout space.
+- Engine: KO running count now initializes to the standard KO IRC based on number of decks (IRC = -4 * (decks - 1)); applied on new shoe / deck-setting change (via newShuffledShoe).
+
+
+v166D (2026-02-15)
+- Fix: KO running count now updates reliably during initial deal by referencing window.BJ.shoe directly (avoids BJ scope issues).
+
+
+v168D (2026-02-15)
+- Refactor: KO counting rebuilt as an independent event-driven module (core/ko_counter.js).
+- Each card now has a unique id at shoe creation (core/shoe.js).
+- UI dispatches cardRevealed on flip midpoint; KO module dedupes by id and emits countUpdated.
+- Training Mode UI behavior unchanged; count pill now reads from koCounter state.
+

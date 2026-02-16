@@ -31,7 +31,16 @@
   const RANKS = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
   const TEN_SET = new Set(['10','J','Q','K']);
 
-  // Internal shoe state
+  
+  
+
+  // ----------------------------
+  // v168D: Card identities
+  // ----------------------------
+  // Each physical card in a shoe is assigned a unique, stable id at shoe creation.
+  // UI uses this id to emit cardRevealed events; counting systems can dedupe safely.
+
+// Internal shoe state
   let shoe = [];
   let shoePos = 0;        // next draw index
   let cutIndex = -1;      // index of cut marker within shoe array
@@ -69,12 +78,16 @@
     return arr;
   }
 
-  function buildRawCards(decks){
+  function buildRawCards(decks, shoeIdForCards){
     const cards=[];
+    let seq = 0;
+    const sid = String(shoeIdForCards || 0);
     for(let d=0; d<decks; d++){
       for(const s of SUITS){
         for(const r of RANKS){
-          cards.push({s,r});
+          // Stable id for this physical card instance within the shoe
+          // Format: "<shoeId>-<seq>"
+          cards.push({s,r,id:`${sid}-${seq++}`});
         }
       }
     }
@@ -132,7 +145,8 @@
   }
 
   function newShuffledShoe(decks){
-    const cards = buildRawCards(decks);
+    const nextShoeId = shoeId + 1;
+    const cards = buildRawCards(decks, nextShoeId);
     const audit = validateFullShoe(cards, decks);
     if(!audit.ok){
       console.error('Shoe validation FAILED:', audit.issues);
@@ -144,7 +158,7 @@
     shoe = cards;
     shoePos = 0;
     discardPile = [];
-    shoeId += 1;
+    shoeId = nextShoeId;
 
     return { auditOk: audit.ok, auditIssues: audit.issues || [], shoeId };
   }

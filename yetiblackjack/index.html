@@ -7,7 +7,7 @@
 <title>Yeti Blackjack</title>
 <script>
   // Single source of truth for the running build.
-  const APP_VERSION = "Yeti Blackjack v159D";
+  const APP_VERSION = "Yeti Blackjack v168D";
 </script>
 <!-- Libre Baskerville -->
 <link href="https://fonts.googleapis.com" rel="preconnect"/>
@@ -380,7 +380,12 @@ pointer-events:none;
   display:flex;
   gap:16px;
   align-items:center;
-  flex-wrap:wrap;
+  /* keep HUD on one line on desktop; allow wrap on smaller screens */
+  flex-wrap:nowrap;
+}
+
+@media (max-width: 980px){
+  .hudRow{ flex-wrap:wrap; }
 }
 
 .hudBox{
@@ -397,14 +402,29 @@ pointer-events:none;
 }
 .hudBox .label{ font-size:16px; letter-spacing:.12em; text-transform:uppercase; color: rgba(255,255,255,.75); white-space: nowrap; }
 .hudBox .amount{ font-size: var(--hudFont); color:#f7e6b0; letter-spacing:.02em; }
+
+#countBox{ 
+  cursor:pointer; 
+  user-select:none; 
+  -webkit-user-select:none;
+  /* v166D: size the pill to the label by default (value is hidden unless revealed) */
+  min-width: unset;
+  width: fit-content;
+  padding: 10px 14px;
+  justify-content: center;
+  gap: 10px;
+}
+#countBox .label{ font-size:14px; letter-spacing:.14em; }
+#countBox .amount{ display:none; text-align:right; font-variant-numeric: tabular-nums; }
+#countBox.revealed .amount{ display:inline; }
 #bankrollBox .amount{ min-width: 9ch; text-align:right; font-variant-numeric: tabular-nums; }
 #betBox .amount{ min-width: 7ch; text-align:right; font-variant-numeric: tabular-nums; }
 #actionBox .amount{ min-width: 9ch; text-align:right; font-variant-numeric: tabular-nums; }
 
 /* Lock HUD box widths so digit changes never reflow the row */
-#bankrollBox{ min-width: 260px; }
-#betBox{ min-width: 320px; }
-#actionBox{ min-width: 320px; }
+#bankrollBox{ min-width: 250px; }
+#betBox{ min-width: 300px; }
+#actionBox{ min-width: 280px; flex: 1 1 auto; }
 
 
 .betControls{
@@ -579,7 +599,7 @@ pointer-events:none;
   z-index: var(--z-settings);
 }
 
-/* v159D: Graph + Clear Data modals must appear above Settings */
+/* v161D: Graph + Clear Data modals must appear above Settings */
 #bankrollGraphModal.modalOverlay,
 #clearDataModal.modalOverlay{
   z-index: var(--z-settingsTools);
@@ -1348,9 +1368,98 @@ border-bottom: 1px solid rgba(0,0,0,1.55);
 #bankrollGraphModal .modal{ max-width: 760px; width: 92%; background: #ffffff; color: #111; border-radius: 18px; padding: 18px 18px 16px; }
 #bankrollGraphModal .modalTitle{ color:#111; }
 #bankrollGraphModal .modalText{ color:#222; font-size:14px; line-height:1.35; }
+
+/* v161D: Leave-table door (top-left) */
+.leaveDoor{
+  position:absolute;
+  top:14px;
+  left:14px;
+  width:clamp(90px, 11.25vw, 175px);
+  height:auto;
+  display:block;
+  z-index: 9000; /* below modals (>=10000), above table art */
+  text-decoration:none;
+}
+.leaveDoor img{
+  width:100%;
+  height:auto;
+  display:block;
+}
+/* Tooltip */
+.leaveDoor.tooltip{ position:absolute; }
+.leaveDoor .tooltiptext{
+  position:absolute;
+  left:calc(100% + 10px);
+  top:50%;
+  transform:translateY(-50%);
+  white-space:nowrap;
+  opacity:0;
+  pointer-events:none;
+  transition:opacity 0.15s ease;
+  padding:6px 10px;
+  border-radius:10px;
+  font-size:13px;
+  background:rgba(20,26,34,0.92);
+  color:#fff;
+  border:1px solid rgba(255,255,255,0.18);
+  box-shadow:0 6px 18px rgba(0,0,0,0.35);
+}
+.leaveDoor:hover .tooltiptext,
+.leaveDoor:focus .tooltiptext{
+  opacity:1;
+}
+
+
+/* v161D: prayer flags header image in About modal */
+#helpModal .prayerWrap{
+  margin: 0 0 4px !important;   /* minimal gap before ABOUT */
+  height: 210px !important;
+  overflow: hidden !important;
+}
+#helpModal .prayerFlagsImg{
+  width: 100% !important;
+  max-width: 100% !important;
+  display: block !important;
+  position: relative !important;
+  top: -70px !important;
+  height: auto !important;
+  pointer-events: none !important;
+  filter: drop-shadow(0 6px 12px rgba(0,0,0,0.18)) !important;
+}
+
+
+/* v161D: About header prayer flags */
+#helpModal .aboutFlags{
+  margin: -10px 0 0 !important;   /* pull up toward top of scroll area */
+  padding: 0 !important;
+  height: 230px !important;       /* visible window for flags */
+  overflow: hidden !important;
+}
+#helpModal .aboutFlagsImg{
+  width: 100% !important;         /* edge-to-edge */
+  height: auto !important;
+  display: block !important;
+  position: relative !important;
+  top: -85px !important;          /* lift so rope sits higher; less dead space */
+  filter: drop-shadow(0 6px 12px rgba(0,0,0,0.18)) !important;
+  pointer-events: none !important;
+}
+/* tighten gap before first heading */
+#helpModal .scrollContent > h2:first-of-type{
+  margin-top: 0 !important;
+}
 </style>
 </head>
 <body>
+
+<a id="leaveTableDoor" class="leaveDoor tooltip"
+   href="https://himalayagames.github.io"
+   target="_blank" rel="noopener"
+   aria-label="Leave table">
+  <img src="images/yeti_exit_door.png" alt="Leave table">
+  <span class="tooltiptext">Leave table</span>
+</a>
+
 <div aria-hidden="true" id="devBadge">DEV</div>
 <div aria-hidden="true" class="rotateOverlay hidden" id="rotateOverlay">
 <div class="box">
@@ -1386,6 +1495,12 @@ border-bottom: 1px solid rgba(0,0,0,1.55);
 <div class="label">CHIPS IN ACTION</div>
 <div class="amount" id="actionAmt">$0</div>
 </div>
+
+<div class="hudBox" id="countBox" style="display:none;">
+  <div class="label">COUNT</div>
+  <div class="amount" id="countAmt"></div>
+</div>
+
 </div>
 <div class="actionsRow">
 <button class="btn" id="dealBtn">DEAL</button>
@@ -1422,10 +1537,16 @@ border-bottom: 1px solid rgba(0,0,0,1.55);
 <div class="scrollCard">
 <div aria-hidden="true" class="scrollTopRoll"></div>
 <div class="scrollContent">
-<div aria-hidden="true" class="prayerWrap">
+
+<div class="aboutFlags" aria-hidden="true">
+  <img class="aboutFlagsImg" src="images/tibetan_prayer_flags.png" alt="Tibetan prayer flags">
 </div>
+
 <h2>🏔️ About the Himalaya Casino</h2>
 <p>High in the Himalayas stands a casino unlike any other.</p>
+
+
+
 <p>Years ago, a legendary Las Vegas casino mogul vanished during a solo trek near Everest. The truth never reached the papers: he was captured by yetis. While awaiting his fate, he shuffled cards and taught them blackjack. The yetis were fascinated. What began as curiosity became joy, then pride. Instead of eating him, they made him their chief. Blackjack gave their community structure, competition, and a shared craft. Together, they built The Himalaya Casino, a high-altitude temple of green felt and clean odds. The mogul eventually returned home, but the casino remains—run exclusively by yetis, for players who respect the game.</p>
 <p><strong>Welcome to the Himalaya.</strong></p>
 <h2>🃏 Blackjack Rules at the Himalaya</h2>
@@ -1514,10 +1635,50 @@ border-bottom: 1px solid rgba(0,0,0,1.55);
 <p>Together, these indicators show how deep you are into the shoe, making it easier to judge deck penetration and, for those who wish to do so, practice <strong>true count</strong> calculations while playing.</p>
 <h3>When Settings Apply</h3>
 <p>To keep gameplay consistent and fair:</p>
+
 <ul>
 <li>All settings except bankroll are locked after the first deal of a shoe</li>
 <li>Locked settings become available again only after the shoe is completed</li>
 <li>Bankroll may be adjusted at any time</li>
+</ul>
+<h3 style="margin-top:18px;">Game Persistence</h3>
+<p style="margin-top:6px;">
+  This game saves a few things automatically in your browser so you can close the tab and come back later.
+</p>
+<ul>
+  <li><b>Bankroll and winnings graph</b> are saved after each completed round.</li>
+  <li><b>We do not restore mid-hand.</b> If you refresh during a hand, the current hand is not recovered.</li>
+  <li>Your data is stored locally in your browser (localStorage) on this device.</li>
+  <li>If you clear site data / browser storage, use private browsing, or switch devices/browsers, your saved bankroll may not carry over.</li>
+  <li>Use the <b>Reset Data</b> button (if enabled in your build) to clear saved data and start fresh.</li>
+
+<h4 style="margin-top:14px;">Training Mode</h4>
+<p style="margin-top:6px;">
+  Training Mode lets you practice the <b>Knock-Out (KO)</b> blackjack counting system while you play.
+  When enabled in <b>Settings</b>, a <b>COUNT</b> box appears on the top HUD row to the right of <b>Chips in Action</b>.
+</p>
+<ul>
+  <li><b>Desktop / hover-capable devices:</b> the running count is revealed only while your cursor is over the COUNT box.</li>
+  <li><b>Touch devices (no hover):</b> tap the COUNT box to toggle the running count on/off.</li>
+  <li><b>Count updates:</b> only when cards become visible to you (no hidden face-down cards).</li>
+</ul>
+
+<table class="settingsTable" style="margin-top:10px; width:100%;">
+  <tr>
+    <td class="settingsLabel" style="width:40%;">Conditions</td>
+    <td class="settingsLabel" style="width:30%;">IRC</td>
+    <td class="settingsLabel" style="width:30%;">Key Count</td>
+  </tr>
+  <tr><td>1 deck</td><td>0</td><td>+2</td></tr>
+  <tr><td>2 decks</td><td>−4</td><td>+1</td></tr>
+  <tr><td>4 decks</td><td>−12</td><td>−1</td></tr>
+  <tr><td>6 decks</td><td>−20</td><td>−4</td></tr>
+  <tr><td>8 decks</td><td>−28</td><td>−6</td></tr>
+</table>
+<p style="margin-top:8px; font-size: 13px; opacity: .9;">
+  Note: The app displays only the <b>running count</b>. No true count, betting advice, or other calculations are performed.
+</p>
+
 </ul>
 <h3>❄️ The Yeti Way</h3>
 <p>At the Himalaya, the shuffle is honest, the rules are clear, and discipline matters. Play patiently, respect the math, and remember: sometimes the smartest move is knowing when to surrender.</p>
@@ -1537,6 +1698,7 @@ border-bottom: 1px solid rgba(0,0,0,1.55);
   <!-- Core (DOM-free) -->
   <script src="core/utils.js"></script>
   <script src="core/shoe.js"></script>
+  <script src="core/ko_counter.js"></script>
   <script src="core/rules_blackjack.js"></script>
   <script src="core/engine.js"></script>
 
@@ -1680,6 +1842,13 @@ border-bottom: 1px solid rgba(0,0,0,1.55);
 <td class="settingsRadios">
 <label><input id="soundtrackYes" name="soundtrack" type="radio" value="yes"/> Yes</label>
 <label><input id="soundtrackNo" name="soundtrack" type="radio" value="no"/> No</label>
+</td>
+</tr>
+<tr>
+<td class="settingsLabel">Training Mode</td>
+<td class="settingsRadios">
+<label><input id="trainingModeYes" name="trainingMode" type="radio" value="yes"/> Yes</label>
+<label><input id="trainingModeNo" name="trainingMode" type="radio" value="no"/> No</label>
 </td>
 </tr>
 </table>

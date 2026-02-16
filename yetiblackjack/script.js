@@ -86,6 +86,123 @@ function setShowHandTotals(v){
 }
 
 
+// -----------------
+// Training Mode (KO Running Count) (v162D)
+// -----------------
+let TRAINING_MODE = false; // default NO
+let COUNT_REVEALED = false; // UI reveal state (hover/tap)
+const TRAINING_MODE_STORAGE_KEY = 'yetiTrainingMode_v1';
+
+function loadTrainingMode(){
+  try{
+    const ls = localStorage.getItem(TRAINING_MODE_STORAGE_KEY);
+    if(ls !== null){
+      TRAINING_MODE = (ls === '1');
+      return;
+    }
+    TRAINING_MODE = false;
+    localStorage.setItem(TRAINING_MODE_STORAGE_KEY, '0');
+  }catch(_e){ /* ignore */ }
+}
+
+function applyTrainingMode(){
+  try{
+    const box = document.getElementById('countBox');
+    if(box){
+      box.style.display = TRAINING_MODE ? 'flex' : 'none';
+    }
+    // Hide count whenever training mode is turned off.
+    if(!TRAINING_MODE) COUNT_REVEALED = false;
+    updateCountPill();
+  }catch(_e){ /* ignore */ }
+}
+
+function setTrainingMode(on){
+  TRAINING_MODE = !!on;
+  try{ localStorage.setItem(TRAINING_MODE_STORAGE_KEY, TRAINING_MODE ? '1' : '0'); }catch(_e){ /* ignore */ }
+  applyTrainingMode();
+}
+
+function canDeviceHover(){
+  try{
+    return !!(window.matchMedia && window.matchMedia('(hover: hover)').matches);
+  }catch(_e){
+    return false;
+  }
+}
+
+function formatCount(n){
+  const v = Number(n) || 0;
+  if(v > 0) return `+${v}`;
+  return String(v);
+}
+
+function updateCountPill(){
+  try{
+    const amt = document.getElementById('countAmt');
+    if(!amt) return;
+    const box = document.getElementById('countBox');
+
+    if(!TRAINING_MODE){
+      amt.textContent = '';
+      if(box) box.classList.remove('revealed');
+      return;
+    }
+    if(!COUNT_REVEALED){
+      amt.textContent = '';
+      if(box) box.classList.remove('revealed');
+      return;
+    }
+    const _ko = (window.BJ && window.BJ.koCounter) ? window.BJ.koCounter : null;
+    const rc = (_ko && typeof _ko.getRunningCount === 'function') ? _ko.getRunningCount() : 0;
+    amt.textContent = formatCount(rc);
+    if(box) box.classList.add('revealed');
+  }catch(_e){ /* ignore */ }
+}
+
+function wireCountPillInteractions(){
+  const box = document.getElementById('countBox');
+  if(!box) return;
+
+  // Avoid duplicate bindings if called more than once.
+  if(box.__countWired) return;
+  box.__countWired = true;
+
+  const hoverCapable = canDeviceHover();
+
+  if(hoverCapable){
+    box.addEventListener('pointerenter', ()=>{
+      if(!TRAINING_MODE) return;
+      COUNT_REVEALED = true;
+      updateCountPill();
+    });
+    box.addEventListener('pointerleave', ()=>{
+      COUNT_REVEALED = false;
+      updateCountPill();
+    });
+  }else{
+    // Touch devices: tap toggles reveal.
+    box.addEventListener('pointerdown', (e)=>{
+      if(!TRAINING_MODE) return;
+      // Prevent focus/selection side effects.
+      try{ e.preventDefault(); }catch(_){}
+      COUNT_REVEALED = !COUNT_REVEALED;
+      updateCountPill();
+    });
+  }
+}
+
+
+
+// v168D: KO count is event-driven.
+// - UI emits `cardRevealed` when a face-down card becomes visible.
+// - BJ.koCounter listens and emits `countUpdated`.
+// - UI listens for `countUpdated` to refresh the pill when appropriate.
+document.addEventListener('countUpdated', (_e)=>{
+  try{
+    if(TRAINING_MODE && COUNT_REVEALED) updateCountPill();
+  }catch(_err){ /* ignore */ }
+});
 
 
 /*** Deck ***/
@@ -207,6 +324,7 @@ function saveCutPolicyToStorage(){
 
 function newShuffledShoe(decks){
   BJ.shoe.newShuffledShoe(decks);
+  try{ if(window.BJ && BJ.koCounter && typeof BJ.koCounter.reset === 'function'){ BJ.koCounter.reset(decks); } }catch(_e){}
   // UI reactions (DEV viewer + icons) remain in the UI layer for now.
   updateDeckViewer();
   updateShoeDiscardIcons();
@@ -1062,6 +1180,8 @@ function showSettingsModal(){
   const gameSoundsNo  = getEl('gameSoundsNo');
   const soundtrackYes = getEl('soundtrackYes');
   const soundtrackNo  = getEl('soundtrackNo');
+  const trainingModeYes = getEl('trainingModeYes');
+  const trainingModeNo  = getEl('trainingModeNo');
 if(GAME_SOUNDS_ON){
     if(gameSoundsYes) gameSoundsYes.checked = true;
     if(gameSoundsNo) gameSoundsNo.checked = false;
@@ -1072,7 +1192,11 @@ if(GAME_SOUNDS_ON){
   if(soundtrackYes && soundtrackNo){
     soundtrackYes.checked = !!SOUNDTRACK_ON;
     soundtrackNo.checked  = !SOUNDTRACK_ON;
+    if(trainingModeYes && trainingModeNo){
+    trainingModeYes.checked = !!TRAINING_MODE;
+    trainingModeNo.checked  = !TRAINING_MODE;
   }
+}
 settingsModal.classList.remove('hidden');
   settingsModal.style.display = 'flex';
   settingsModal.style.pointerEvents = 'auto';
@@ -1300,6 +1424,8 @@ function applySettingsFromModal(){
   const gameSoundsYes = getEl('gameSoundsYes');
   const soundtrackYes = getEl('soundtrackYes');
   const soundtrackNo  = getEl('soundtrackNo');
+  const trainingModeYes = getEl('trainingModeYes');
+  const trainingModeNo  = getEl('trainingModeNo');
 const rulesLocked = areTableRulesLocked();
 
   // Bankroll entry snapped to nearest $5, no decimals
@@ -1383,6 +1509,11 @@ const rulesLocked = areTableRulesLocked();
     // Background soundtrack on/off
     const on = !!(soundtrackYes && soundtrackYes.checked);
     setSoundtrackOn(on);
+  // v162D: Training Mode
+  if(trainingModeYes || trainingModeNo){
+    const on = !!(trainingModeYes && trainingModeYes.checked);
+    setTrainingMode(on);
+  }
   }
 // v86: Only rebuild the shoe when decks actually changed (and only when allowed).
   if(decksChanged || cutChanged){
@@ -1552,6 +1683,18 @@ let testInsuranceMode = null;
 const CARD_FRONT_HTML = new WeakMap(); // shell -> front innerHTML
 const CARD_FRONT_IS_ART = new WeakMap(); // shell -> boolean
 
+
+function dispatchCardRevealedFromShell(shell){
+  try{
+    if(!shell || !shell.dataset) return;
+    const id = shell.dataset.cardId;
+    const rank = shell.dataset.rank;
+    if(!id || !rank) return;
+    const ev = new CustomEvent('cardRevealed', { detail: { id: String(id), rank: String(rank) } });
+    document.dispatchEvent(ev);
+  }catch(_e){ /* ignore */ }
+}
+
 function makeCardEl(){
   const d=document.createElement("div");
   d.className="card";
@@ -1563,6 +1706,10 @@ function renderCardShell(card, faceUp=true, artOnly=false){
   shell.className = 'cardShell';
   // Desired final state (used by animation + debug logging)
   shell.dataset.faceUp = faceUp ? '1' : '0';
+  try{
+    if(card && card.id) shell.dataset.cardId = String(card.id);
+    if(card && card.r) shell.dataset.rank = String(card.r);
+  }catch(_e){}
 
   // Stable shell + anchor + mover + stage + ONE visual element.
   // IMPORTANT:
@@ -1709,6 +1856,8 @@ function updateHud(){
   bankrollAmt.textContent = fmtMoney(bankroll);
   betAmt.textContent = fmtMoney(bet);
   if(actionAmt) actionAmt.textContent = fmtMoney(computeChipsInAction());
+
+    updateCountPill();
 
   setButtons();
 }
@@ -1862,6 +2011,14 @@ function renderHands(){
       try{
         if(!shell) return;
         shell.dataset.faceUp = faceUp ? '1' : '0';
+        try{
+          if(card && card.id) shell.dataset.cardId = String(card.id);
+          if(card && card.r) shell.dataset.rank = String(card.r);
+        }catch(_e){}
+  try{
+    if(card && card.id) shell.dataset.cardId = String(card.id);
+    if(card && card.r) shell.dataset.rank = String(card.r);
+  }catch(_e){}
 
         // v73/v83: Ensure a dedicated cardAnchor (layout only) and cardMover (slide transforms) exist.
         // Shell & anchor stay purely layout/positioning; mover owns translate3d; stage is perspective only.
@@ -2171,6 +2328,8 @@ async function animateLastDealtCard(laneEl, reveal=true){
       // Swap content at the midpoint (while nearly zero-width)
       visual.classList.remove('back');
       visual.innerHTML = CARD_FRONT_HTML.get(shell) || '';
+      // v168D: announce reveal to counting systems
+      dispatchCardRevealedFromShell(shell);
       void visual.offsetWidth;
 
       // Expand
@@ -2236,6 +2395,8 @@ async function animateRevealDealerHoleCard(){
     // Midpoint swap: face-up content
     visual.classList.remove('back');
     visual.innerHTML = CARD_FRONT_HTML.get(holeShell) || '';
+    // v168D: announce reveal to counting systems
+    dispatchCardRevealedFromShell(holeShell);
     void visual.offsetWidth;
 
     // Expand
@@ -2492,7 +2653,6 @@ async function settleDealerBlackjack(playerBJ){
 
   holeDown = false;
   renderHands();
-
   // (Dealer blackjack path uses a short pause instead of the full flip animation.)
   await pause(220);
 
@@ -2774,7 +2934,6 @@ async function nextHandOrDealer(){
         renderHands();
         await animateLastDealtCard(playerLane, true);
         endPlayerTotalHold();
-
         // Splitting aces: each hand receives one card and then stands (unless it becomes AA again).
         if(hands[i].isAceSplit && hands[i].cards.length === 2){
           const aa = hands[i].cards[0].r === 'A' && hands[i].cards[1].r === 'A';
@@ -2859,7 +3018,6 @@ async function dealerPlayAndSettle(){
 
     renderHands();
     await animateLastDealtCard(dealerLane, true);
-
     dealerVisibleCount = dealerHand.length;
     dealerTotalHold = false;
     updateLabels();
@@ -3022,7 +3180,6 @@ async function onHit(){
   renderHands();
   await animateLastDealtCard(playerLane, true);
   endPlayerTotalHold();
-
   if(handTotal(h.cards) > 21){
     // Bust
     h.outcome = 'lose';
@@ -3084,7 +3241,6 @@ async function onDouble(){
   renderHands();
   await animateLastDealtCard(playerLane, true);
   endPlayerTotalHold();
-
   finishHand();
   setButtons();
   await nextHandOrDealer();
@@ -3129,7 +3285,6 @@ async function onSplit(){
   renderHands();
   await animateLastDealtCard(playerLane, true);
   endPlayerTotalHold();
-
   // Splitting aces: each hand gets one card then stands (unless it becomes AA again).
   if(splittingAces && first.cards.length === 2){
     const firstIsAA = first.cards[0].r === "A" && first.cards[1].r === "A";
@@ -3333,6 +3488,12 @@ function init(){
   // the setting only controls whether numeric totals are shown.
   loadShowHandTotals();
   applyShowHandTotals();
+
+  // v162D: Training Mode (KO running count)
+  loadTrainingMode();
+  applyTrainingMode();
+  wireCountPillInteractions();
+
 
   // v130C: Visible build version in the About/Instructions panel.
   try{
