@@ -1,5 +1,5 @@
 /*
-  core/ko_counter.js (v168D)
+  core/ko_counter.js (v170D)
   -------------------------
   Independent KO counting module.
 
@@ -21,8 +21,23 @@
 
   const TEN_SET = new Set(['10','J','Q','K']);
 
+  // Normalize rank strings from different UI sources (e.g. "K" vs "KING", "A" vs "ACE").
+  function normalizeRank(rank){
+    let r = String(rank || '').toUpperCase().trim();
+    // Strip non-alphanumeric (handles accidental suit symbols, whitespace, etc.)
+    r = r.replace(/[^A-Z0-9]/g, '');
+
+    // Word ranks / alternates
+    if(r === 'ACE' || r === '1') r = 'A';
+    if(r === 'KING') r = 'K';
+    if(r === 'QUEEN') r = 'Q';
+    if(r === 'JACK') r = 'J';
+    if(r === 'T') r = '10';
+    return r;
+  }
+
   function koTagForRank(rank){
-    const r = String(rank || '').toUpperCase();
+    const r = normalizeRank(rank);
     if(r === 'A' || TEN_SET.has(r)) return -1;
     if(r === '8' || r === '9') return 0;
     if(r === '2' || r === '3' || r === '4' || r === '5' || r === '6' || r === '7') return +1;

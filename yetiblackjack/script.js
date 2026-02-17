@@ -34,6 +34,7 @@ const {
  */
 // v139C: Enable dev/test controls so Split testing is easy.
 const DEV_TOOLS_ENABLED = false;
+// v175D: DEV_TOOLS_ENABLED controls all dev/debug UI (single flag).
 
 // Casino rule: allow at most 4 total hands after splitting.
 const MAX_SPLIT_HANDS = 4;
@@ -109,10 +110,11 @@ function applyTrainingMode(){
   try{
     const box = document.getElementById('countBox');
     if(box){
-      box.style.display = TRAINING_MODE ? 'flex' : 'none';
+      box.style.display = (TRAINING_MODE || DEV_TOOLS_ENABLED === true) ? 'flex' : 'none';
     }
     // Hide count whenever training mode is turned off.
-    if(!TRAINING_MODE) COUNT_REVEALED = false;
+    if(!TRAINING_MODE && DEV_TOOLS_ENABLED !== true) COUNT_REVEALED = false;
+    if(DEV_TOOLS_ENABLED === true) COUNT_REVEALED = true;
     updateCountPill();
   }catch(_e){ /* ignore */ }
 }
@@ -143,12 +145,15 @@ function updateCountPill(){
     if(!amt) return;
     const box = document.getElementById('countBox');
 
-    if(!TRAINING_MODE){
+    if(!(TRAINING_MODE || DEV_TOOLS_ENABLED === true)){
       amt.textContent = '';
       if(box) box.classList.remove('revealed');
       return;
     }
-    if(!COUNT_REVEALED){
+    // In dev tools mode, keep the running count continuously visible for easier verification.
+    const revealNow = (DEV_TOOLS_ENABLED === true) ? true : COUNT_REVEALED;
+
+    if(!revealNow){
       amt.textContent = '';
       if(box) box.classList.remove('revealed');
       return;
@@ -194,13 +199,14 @@ function wireCountPillInteractions(){
 
 
 
-// v168D: KO count is event-driven.
+// v171D: KO count is event-driven.
 // - UI emits `cardRevealed` when a face-down card becomes visible.
 // - BJ.koCounter listens and emits `countUpdated`.
 // - UI listens for `countUpdated` to refresh the pill when appropriate.
 document.addEventListener('countUpdated', (_e)=>{
   try{
-    if(TRAINING_MODE && COUNT_REVEALED) updateCountPill();
+    if(DEV_TOOLS_ENABLED === true) updateCountPill();
+    else if(TRAINING_MODE && COUNT_REVEALED) updateCountPill();
   }catch(_err){ /* ignore */ }
 });
 
@@ -608,6 +614,8 @@ const testSplitsBtn = document.getElementById("testSplitsBtn");
 const testInsBJBtn = document.getElementById("testInsBJBtn");
 const testInsNoBJBtn = document.getElementById("testInsNoBJBtn");
 const deckViewerBtn = document.getElementById("deckViewerBtn");
+const forcePlayerBJBtn = document.getElementById("forcePlayerBJBtn");
+const forceDealerBJBtn = document.getElementById("forceDealerBJBtn");
 
 // Insurance modal refs (these nodes are declared AFTER the main script in the HTML)
 // so we must lazily resolve them after DOM is available.
@@ -1352,6 +1360,59 @@ function runShuffleOverlayCycle(overlay){
   })();
 }
 
+
+// v172D: Training-mode end-of-shoe modal that shows final running count before reset/shuffle.
+let _finalCountModalActive = false;
+
+function showFinalCountModal(){
+  const modal = getEl('finalCountModal');
+  const valEl = getEl('finalCountValue');
+  const okBtn = getEl('finalCountOkBtn');
+
+  // If markup is missing for any reason, fall back to immediate shuffle.
+  if(!modal || !valEl || !okBtn){
+    return false;
+  }
+
+  // Read current running count from KO counter (training mode uses KO).
+  let rc = 0;
+  try{
+    const _ko = (window.BJ && BJ.koCounter) ? BJ.koCounter : null;
+    rc = (_ko && typeof _ko.getRunningCount === 'function') ? _ko.getRunningCount() : 0;
+  }catch(_e){ rc = 0; }
+
+  valEl.textContent = formatCount(rc);
+
+  _finalCountModalActive = true;
+
+  // Hard lock the UI until dismissed.
+  uiLocked = true;
+  setButtons();
+
+  modal.classList.remove('hidden');
+  modal.style.display = 'flex';
+  modal.style.pointerEvents = 'auto';
+
+  // Focus OK for keyboard users.
+  try{ okBtn.focus(); }catch(_e){ /* ignore */ }
+  return true;
+}
+
+function hideFinalCountModal(){
+  const modal = getEl('finalCountModal');
+  if(modal){
+    modal.classList.add('hidden');
+    modal.style.display = 'none';
+    modal.style.pointerEvents = 'none';
+  }
+  _finalCountModalActive = false;
+}
+
+function performBetweenHandsShuffle(){
+  shufflePending = false;
+  newShuffledShoe(RULE_NUM_DECKS);
+  triggerShuffleOverlay();
+}
 function triggerShuffleOverlay(){
   const overlay = getEl('shuffleOverlay');
   if(!overlay) return;
@@ -1639,6 +1700,10 @@ let testSplits = false;
 //  - 'noBj' => Dealer shows Ace + 9 (no blackjack)
 let testInsuranceMode = null;
 
+// v173D: One-shot debug helpers for forcing initial blackjacks.
+let forcePlayerBlackjackNext = false;
+let forceDealerBlackjackNext = false;
+
 
 /*** Rendering ***/
 // ---------------------------------------------------------------------------
@@ -1736,6 +1801,9 @@ function renderCardShell(card, faceUp=true, artOnly=false){
   if(faceUp){
     visual.classList.remove('back');
     visual.innerHTML = frontEl.innerHTML;
+    // v171D: count systems need to see initially face-up cards too
+    // (initial deal upcards were previously not emitting `cardRevealed`).
+    dispatchCardRevealedFromShell(shell);
   }else{
     visual.classList.add('back');
     visual.innerHTML = '';
@@ -2069,9 +2137,13 @@ function renderHands(){
         CARD_FRONT_HTML.set(shell, frontEl.innerHTML);
         CARD_FRONT_IS_ART.set(shell, !!artOnly);
 
+        const wasBack = visual.classList.contains('back');
         if(faceUp){
           visual.classList.remove('back');
           visual.innerHTML = frontEl.innerHTML;
+          // v171D: if a previously face-down shell becomes visible via in-place sync
+          // (e.g., dealer blackjack immediate reveal), emit cardRevealed now.
+          if(wasBack) dispatchCardRevealedFromShell(shell);
         }else{
           visual.classList.add('back');
           visual.innerHTML = '';
@@ -2328,7 +2400,7 @@ async function animateLastDealtCard(laneEl, reveal=true){
       // Swap content at the midpoint (while nearly zero-width)
       visual.classList.remove('back');
       visual.innerHTML = CARD_FRONT_HTML.get(shell) || '';
-      // v168D: announce reveal to counting systems
+      // v171D: announce reveal to counting systems
       dispatchCardRevealedFromShell(shell);
       void visual.offsetWidth;
 
@@ -2395,7 +2467,7 @@ async function animateRevealDealerHoleCard(){
     // Midpoint swap: face-up content
     visual.classList.remove('back');
     visual.innerHTML = CARD_FRONT_HTML.get(holeShell) || '';
-    // v168D: announce reveal to counting systems
+    // v171D: announce reveal to counting systems
     dispatchCardRevealedFromShell(holeShell);
     void visual.offsetWidth;
 
@@ -2782,9 +2854,18 @@ function setButtons(){
 
   // v94: If a shuffle was queued by reaching the cut card mid-hand, perform it now (between hands).
   if(!inRound && !gameOver && shufflePending && !_shuffleOverlayActive){
-    shufflePending = false;
-    newShuffledShoe(RULE_NUM_DECKS);
-    triggerShuffleOverlay();
+    // v172D: In Training Mode, show a blocking modal with the final running count before reset.
+    if(TRAINING_MODE){
+      if(!_finalCountModalActive){
+        // If the modal can't be shown for some reason, fall back to immediate shuffle.
+        const shown = showFinalCountModal();
+        if(!shown){
+          performBetweenHandsShuffle();
+        }
+      }
+    }else{
+      performBetweenHandsShuffle();
+    }
   }
 
 }
@@ -2845,7 +2926,13 @@ async function startRound(){
   updateHud();
 
   // Deal pattern: P1, D up, P2, D hole
-  const p1 = draw();
+  const _forcePlayerBJ = (DEV_TOOLS_ENABLED === true && forcePlayerBlackjackNext);
+  const _forceDealerBJ = (DEV_TOOLS_ENABLED === true && forceDealerBlackjackNext);
+  // One-shot: consume flags immediately so re-click is required for subsequent hands.
+  forcePlayerBlackjackNext = false;
+  forceDealerBlackjackNext = false;
+
+  const p1 = _forcePlayerBJ ? drawSpecific({s:"spades", r:"A"}) : draw();
   hands[0].cards.push(p1);
 
   // v131C: Player total updates only after the new card is flipped/visible
@@ -2857,7 +2944,8 @@ async function startRound(){
   dbgStep('startRound: player card animated');
 
   // If we're running insurance tests, force the dealer upcard to an Ace.
-  const forceInsurance = (DEV_TOOLS_ENABLED && (testInsuranceMode === 'bj' || testInsuranceMode === 'noBj'));
+  // v173D: Force Dealer Blackjack piggybacks on the same insurance/peek pipeline.
+  const forceInsurance = (DEV_TOOLS_ENABLED && (testInsuranceMode === 'bj' || testInsuranceMode === 'noBj')) || _forceDealerBJ;
   const d1 = forceInsurance ? drawSpecific({s:"spades", r:"A"}) : draw();
   dealerHand.push(d1);
 
@@ -2867,7 +2955,9 @@ async function startRound(){
   dbgStep('startRound: dealer upcard animated');
 
   let p2;
-  if(testSplits){
+  if(_forcePlayerBJ){
+    p2 = drawSpecific({s:"hearts", r:"K"});
+  }else if(testSplits){
     p2 = drawMatching(p1);
   }else{
     p2 = draw();
@@ -2885,7 +2975,7 @@ async function startRound(){
   //  - bj   => 10-value (dealer blackjack)
   //  - noBj => 9 (dealer NOT blackjack)
   const d2 = forceInsurance
-    ? (testInsuranceMode === 'bj' ? drawSpecific({s:"hearts", r:"K"}) : drawSpecific({s:"hearts", r:"9"}))
+    ? (_forceDealerBJ ? drawSpecific({s:"hearts", r:"K"}) : (testInsuranceMode === 'bj' ? drawSpecific({s:"hearts", r:"K"}) : drawSpecific({s:"hearts", r:"9"})))
     : draw();
   dealerHand.push(d2);
 
@@ -3402,6 +3492,25 @@ if(!DEV_TOOLS_ENABLED){
     deckViewerBtn.addEventListener("click", ()=>toggleDeckViewer());
   }
 
+  // v173D: Force initial blackjacks (DEV_TOOLS_ENABLED only)
+  if(DEV_TOOLS_ENABLED === true){
+    if(forcePlayerBJBtn){
+      forcePlayerBJBtn.addEventListener('click', ()=>{
+        if(inRound || uiLocked) return;
+        forcePlayerBlackjackNext = true;
+      });
+    }
+    if(forceDealerBJBtn){
+      forceDealerBJBtn.addEventListener('click', ()=>{
+        if(inRound || uiLocked) return;
+        forceDealerBlackjackNext = true;
+      });
+    }
+  }else{
+    if(forcePlayerBJBtn) forcePlayerBJBtn.style.display = 'none';
+    if(forceDealerBJBtn) forceDealerBJBtn.style.display = 'none';
+  }
+
   testInsNoBJBtn.addEventListener('click', ()=>{
     testInsuranceMode = (testInsuranceMode === 'noBj') ? null : 'noBj';
     if(testInsuranceMode === 'noBj'){
@@ -3693,6 +3802,14 @@ function wireDelegatedUI(){
         hideHelpScroll();
         break;
 
+
+      case 'finalCountOkBtn':
+        // v172D: Dismiss training end-of-shoe modal and then shuffle/reset count.
+        hideFinalCountModal();
+        uiLocked = false;
+        setButtons();
+        performBetweenHandsShuffle();
+        break;
       // Broke / out-of-chips modal
       case 'addFundsBtn':
         // Go straight to Add Chips (no intermediate cancel step, no bankroll mutation here)

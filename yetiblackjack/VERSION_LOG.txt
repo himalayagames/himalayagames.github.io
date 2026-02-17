@@ -583,3 +583,36 @@ v168D (2026-02-15)
 - UI dispatches cardRevealed on flip midpoint; KO module dedupes by id and emits countUpdated.
 - Training Mode UI behavior unchanged; count pill now reads from koCounter state.
 
+
+v169D (2026-02-15)
+- Fix: KO counter now normalizes rank strings (e.g., "KING"/"K", "ACE"/"A", "T"/"10") before tagging, preventing off-by-one errors when UI emits word ranks.
+
+
+
+v170D (2026-02-15)
+- FIX: KO counting now emits `cardRevealed` for initially face-up cards at render time (initial deal upcards were not counted, which could show as off-by-one during blackjack or early hands).
+
+
+v171D (2026-02-15)
+- Fix KO counting for dealer blackjack/instant hole-card reveals: when an existing face-down card shell is updated in-place to face-up (no flip animation), emit `cardRevealed` so the hole card (often Ace) is counted correctly.
+
+
+v172D (2026-02-15)
+- Training Mode: when a cut-card shuffle is triggered between hands, show a blocking modal with the final running count before the shoe resets.
+- While the modal is visible, all controls are disabled; pressing OK dismisses it, reshuffles, and resets the running count to the correct IRC for the selected deck count.
+
+
+v173D (2026-02-15)
+- Debug tools: add one-shot buttons to force Player Blackjack or Dealer Blackjack using the normal dealing/animation pipeline (no gameplay logic changes).
+
+
+v174D (2026-02-16)
+- Debug Training Mode: when debugMode is enabled, the COUNT pill remains continuously revealed (running count always visible) on hover-capable devices; when debugMode is off, COUNT reverts to normal hover/tap reveal behavior.
+
+v175D — 2026-02-16
+- Set debugMode = true by default.
+2026-02-16 - v175D hotfix: DEV_TOOLS_ENABLED defaults ON; unified dev flag; force blackjack buttons enabled; running count displays/updates continuously in dev tools.
+
+
+v176D — 2026-02-16
+- Set DEV_TOOLS_ENABLED = false by default.

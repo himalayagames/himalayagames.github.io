@@ -35,7 +35,7 @@
   
 
   // ----------------------------
-  // v168D: Card identities
+  // v169D: Card identities
   // ----------------------------
   // Each physical card in a shoe is assigned a unique, stable id at shoe creation.
   // UI uses this id to emit cardRevealed events; counting systems can dedupe safely.

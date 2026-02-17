@@ -7,7 +7,7 @@
 <title>Yeti Blackjack</title>
 <script>
   // Single source of truth for the running build.
-  const APP_VERSION = "Yeti Blackjack v168D";
+  const APP_VERSION = "Yeti Blackjack v176D";
 </script>
 <!-- Libre Baskerville -->
 <link href="https://fonts.googleapis.com" rel="preconnect"/>
@@ -1530,6 +1530,8 @@ border-bottom: 1px solid rgba(0,0,0,1.55);
 <button class="toggle" id="testInsBJBtn">Test Insurance (BJ): OFF</button>
 <button class="toggle" id="testInsNoBJBtn">Test Insurance (No BJ): OFF</button>
 <button class="toggle" id="deckViewerBtn">Deck Viewer: OFF</button>
+<button class="toggle" id="forcePlayerBJBtn">Force Player Blackjack</button>
+<button class="toggle" id="forceDealerBJBtn">Force Dealer Blackjack</button>
 </div>
 </div>
 </div><div aria-label="About and Instructions" aria-modal="true" class="modalOverlay hidden" id="helpModal" role="dialog">
@@ -1749,7 +1751,17 @@ border-bottom: 1px solid rgba(0,0,0,1.55);
 </div>
 </div>
 </div>
-</div><div aria-label="Add Chips" aria-modal="true" class="modalOverlay hidden" id="addChipsModal" role="dialog" style="display:none; pointer-events:none;">
+</div>
+<div aria-label="Final Running Count" aria-modal="true" class="modalOverlay hidden" id="finalCountModal" role="dialog">
+  <div class="modalCard">
+    <div class="modalTitle">Training Mode</div>
+    <div class="modalNote">Final running count: <span id="finalCountValue">0</span></div>
+    <div class="modalRow">
+      <button class="btn" id="finalCountOkBtn" type="button">OK</button>
+    </div>
+  </div>
+</div>
+<div aria-label="Add Chips" aria-modal="true" class="modalOverlay hidden" id="addChipsModal" role="dialog" style="display:none; pointer-events:none;">
 <div class="modal">
 <div class="modalTitle">Add Chips</div>
 <div class="modalText">Enter an amount to add to your bankroll (rounded to the nearest $5).</div>
